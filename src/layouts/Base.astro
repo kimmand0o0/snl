@@ -9,6 +9,9 @@ interface Props {
 const { title, description = '매주 밤, 개발자들이 돌아가며 무대에 서는 스터디 — Study Night Live' } = Astro.props;
 const fullTitle = title ? `${title} — SNL` : 'SNL · Study Night Live';
 const path = Astro.url.pathname;
+const me = Astro.locals.me;
+const user = Astro.locals.user;
+const flash = Astro.url.searchParams.get('msg');
 const nav = [
   { href: '/schedule', label: '편성표' },
   { href: '/episodes', label: '다시보기' },
@@ -55,10 +58,22 @@ const nav = [
           }
         </nav>
         <OnAir />
+        {
+          me ? (
+            <a class="acct" href="/me" aria-label="내 프로필">
+              {me.avatar_url ? <img src={me.avatar_url} alt="" width="30" height="30" /> : <span>{me.name.slice(-2)}</span>}
+            </a>
+          ) : user ? (
+            <a class="btn acct-btn" href="/join">가입 마저 하기</a>
+          ) : (
+            <a class="btn acct-btn" href={`/login?next=${encodeURIComponent(path)}`}>로그인</a>
+          )
+        }
       </div>
     </header>
 
     <main>
+      {flash && <p class="wrap flash" role="status">{flash}</p>}
       <slot />
     </main>
 
@@ -69,6 +84,7 @@ const nav = [
           <a href="/calendar.ics">캘린더 구독 (.ics)</a>
           <a href="/rss.xml">RSS</a>
           <a href="/cast/playground">카드 꾸미기</a>
+          {me?.is_admin && <a href="/admin">관리</a>}
         </p>
       </div>
     </footer>
@@ -166,6 +182,42 @@ const nav = [
     }
   }
 
+  .acct {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid var(--line);
+    background: var(--stage-3);
+    font: 800 11px var(--font-body);
+    text-decoration: none;
+    flex: none;
+  }
+  .acct:hover {
+    border-color: var(--bulb);
+  }
+  .acct img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .acct-btn {
+    padding: 6px 14px;
+    font-size: 13px;
+    flex: none;
+  }
+  .flash {
+    margin-top: 20px;
+    margin-bottom: 0;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    border-radius: 10px;
+    background: color-mix(in oklab, var(--bulb) 14%, var(--stage-2));
+    border: 1px solid color-mix(in oklab, var(--bulb) 40%, transparent);
+    font-size: 14px;
+  }
   .foot {
     border-top: 1px solid var(--line);
     margin-top: 80px;

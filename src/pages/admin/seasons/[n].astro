@@ -1,0 +1,329 @@
+---
+import Base from '../../../layouts/Base.astro';
+import { loadAll, slate, ymd } from '../../../lib/data';
+import { back, explain, list, opt, str } from '../../../lib/forms';
+import { planRotation } from '../../../lib/rotation';
+
+const db = Astro.locals.supabase;
+const d = await loadAll(db);
+const season = d.seasons.find((s) => String(s.data.number) === Astro.params.n);
+if (!season) return new Response('기수를 찾을 수 없어요', { status: 404 });
+const eps = d.episodes.filter((e) => e.data.season.id === season.id);
+
+if (Astro.request.method === 'POST') {
+  const fd = await Astro.request.formData();
+  const action = str(fd, 'action');
+  const ok = (msg: string, hash = '') => back(Astro.url, msg, undefined, hash);
+
+  if (action === 'info') {
+    const { error } = await db
+      .from('seasons')
+      .update({
+        title: str(fd, 'title'),
+        theme: opt(fd, 'theme'),
+        start_date: str(fd, 'start'),
+        end_date: opt(fd, 'end'),
+        time: str(fd, 'time') || '20:00',
+        place: str(fd, 'place') || '온라인',
+      })
+      .eq('id', season.dbId);
+    return ok(error ? explain(error) : '기수 정보를 저장했어요.');
+  }
+  if (action === 'delete-season') {
+    const { error } = await db.from('seasons').delete().eq('id', season.dbId);
+    return error ? ok(explain(error)) : back(Astro.url, `${season.data.number}기를 지웠어요.`, '/admin');
+  }
+  if (action === 'cast') {
+    // 체크한 멤버를 순서 칸 숫자대로 정렬해 저장
+    const picked = d.members
+      .filter((m) => fd.get(`in-${m.uid}`) === 'on')
+      .map((m) => ({ uid: m.uid, pos: Number(fd.get(`pos-${m.uid}`)) || 999 }))
+      .sort((a, b) => a.pos - b.pos);
+    const del = await db.from('season_cast').delete().eq('season_id', season.dbId);
+    if (del.error) return ok(explain(del.error), '#cast');
+    if (picked.length) {
+      const { error } = await db
+        .from('season_cast')
+        .insert(picked.map((p, i) => ({ season_id: season.dbId, member_id: p.uid, position: i })));
+      if (error) return ok(explain(error), '#cast');
+    }
+    return ok(`출연진 ${picked.length}명을 저장했어요.`, '#cast');
+  }
+  if (action === 'rotate') {
+    const cast = season.data.cast.map((c) => d.memberById.get(c.id)!.uid);
+    if (!cast.length) return ok('먼저 출연진을 정해 주세요.', '#rotate');
+    const plan = planRotation({
+      cast,
+      start: str(fd, 'start') || ymd(season.data.start),
+      every: Number(str(fd, 'every')) || 7,
+      rounds: Math.min(10, Number(str(fd, 'rounds')) || 1),
+      skip: list(fd, 'skip'),
+      shuffle: fd.get('shuffle') === 'on',
+      firstNumber: Math.max(0, ...eps.map((e) => e.data.number)) + 1,
+    });
+    const { error } = await db.from('episodes').insert(
+      plan.map((p) => ({ season_id: season.dbId, number: p.number, date: p.date, presenter_id: p.presenter })),
+    );
+    return ok(error ? explain(error) : `${plan.length}회차를 편성했어요.`, '#episodes');
+  }
+  if (action === 'add-episode') {
+    const { error } = await db.from('episodes').insert({
+      season_id: season.dbId,
+      number: Math.max(0, ...eps.map((e) => e.data.number)) + 1,
+      date: str(fd, 'date'),
+      presenter_id: opt(fd, 'presenter'),
+      title: str(fd, 'title') || '제목 미정',
+    });
+    return ok(error ? explain(error) : '회차를 추가했어요.', '#episodes');
+  }
+  if (action === 'episode') {
+    const id = Number(str(fd, 'id'));
+    if (fd.get('delete') === '1') {
+      const { error } = await db.from('episodes').delete().eq('id', id);
+      return ok(error ? explain(error) : '회차를 지웠어요.', '#episodes');
+    }
+    const { error } = await db
+      .from('episodes')
+      .update({
+        date: str(fd, 'date'),
+        time: opt(fd, 'time'),
+        presenter_id: opt(fd, 'presenter'),
+        title: str(fd, 'title') || '제목 미정',
+        status: str(fd, 'status'),
+      })
+      .eq('id', id);
+    return ok(error ? explain(error) : '저장했어요.', '#episodes');
+  }
+  return ok('알 수 없는 요청이에요.');
+}
+
+const castUids = season.data.cast.map((c) => d.memberById.get(c.id)!.uid);
+const lastDate = eps.at(-1)?.data.date;
+const nextStart = lastDate ? ymd(new Date(+lastDate + 7 * 86400_000)) : ymd(season.data.start);
+---
+
+<Base title={`${season.data.number}기 관리`}>
+  <section class="wrap head">
+    <p class="eyebrow"><a href="/admin">← 관리</a></p>
+    <h1 class="display big">{season.data.number}기 · {season.data.title}</h1>
+  </section>
+
+  <section class="wrap cols">
+    <form method="post" class="form panel">
+      <h2>기수 정보</h2>
+      <input type="hidden" name="action" value="info" />
+      <label class="field"><span>이름</span><input name="title" required value={season.data.title} /></label>
+      <label class="field"><span>주제</span><input name="theme" value={season.data.theme ?? ''} /></label>
+      <div class="row2">
+        <label class="field"><span>시작일</span><input name="start" type="date" required value={ymd(season.data.start)} /></label>
+        <label class="field"><span>종료일</span><input name="end" type="date" value={season.data.end ? ymd(season.data.end) : ''} /></label>
+      </div>
+      <div class="row2">
+        <label class="field"><span>기본 시간</span><input name="time" type="time" value={season.data.time} /></label>
+        <label class="field"><span>장소</span><input name="place" value={season.data.place} /></label>
+      </div>
+      <div class="actions"><button class="btn primary">저장</button></div>
+    </form>
+
+    <form method="post" class="form panel" id="cast">
+      <h2>출연진 · 발표 순서</h2>
+      <input type="hidden" name="action" value="cast" />
+      {d.members.length === 0 && <p class="muted">아직 가입한 출연진이 없어요. 초대 코드를 공유해 주세요.</p>}
+      <ul class="cast">
+        {
+          [...d.members]
+            .sort((a, b) => {
+              const ia = castUids.indexOf(a.uid), ib = castUids.indexOf(b.uid);
+              return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || a.data.name.localeCompare(b.data.name, 'ko');
+            })
+            .map((m) => {
+              const i = castUids.indexOf(m.uid);
+              return (
+                <li>
+                  <label>
+                    <input type="checkbox" name={`in-${m.uid}`} checked={i >= 0} />
+                    {m.data.name} <span class="muted">/{m.id}</span>
+                  </label>
+                  <input class="pos" name={`pos-${m.uid}`} type="number" min="1" value={i >= 0 ? i + 1 : ''} aria-label="발표 순서" />
+                </li>
+              );
+            })
+        }
+      </ul>
+      <small class="muted">숫자가 작은 순서대로 발표해요.</small>
+      <div class="actions"><button class="btn primary">출연진 저장</button></div>
+    </form>
+  </section>
+
+  <section class="wrap section" id="rotate">
+    <form method="post" class="form panel">
+      <h2>로테이션 자동 편성</h2>
+      <p class="muted">출연진 순서대로 날짜를 배정해 회차를 만들어요. 이미 있는 회차 뒤에 이어 붙어요.</p>
+      <input type="hidden" name="action" value="rotate" />
+      <div class="row2">
+        <label class="field"><span>첫 발표일</span><input name="start" type="date" value={nextStart} /></label>
+        <label class="field"><span>간격 (일)</span><input name="every" type="number" min="1" value="7" /></label>
+        <label class="field"><span>바퀴 수</span><input name="rounds" type="number" min="1" max="10" value="1" /></label>
+      </div>
+      <label class="field">
+        <span>휴방일 (쉼표로 구분)</span>
+        <input name="skip" placeholder="2026-12-24, 2026-12-31" />
+      </label>
+      <label class="check"><input type="checkbox" name="shuffle" /> 순서 섞기</label>
+      <div class="actions"><button class="btn primary">편성하기</button></div>
+    </form>
+  </section>
+
+  <section class="wrap" id="episodes">
+    <h2>회차 {eps.length}</h2>
+    <div class="eps">
+      {
+        eps.map((e) => (
+          <form method="post" class="ep">
+            <input type="hidden" name="action" value="episode" />
+            <input type="hidden" name="id" value={e.dbId} />
+            <a class="slate" href={`/episodes/${e.id}`}>{slate(season.data.number, e.data.number)}</a>
+            <input name="date" type="date" required value={ymd(e.data.date)} aria-label="날짜" />
+            <input name="time" type="time" value={e.data.time ?? ''} aria-label="시간 (비우면 기본 시간)" />
+            <select name="presenter" aria-label="발표자">
+              <option value="">미정</option>
+              {d.members.map((m) => (
+                <option value={m.uid} selected={m.uid === e.presenterUid}>
+                  {m.data.name}
+                </option>
+              ))}
+            </select>
+            <input name="title" value={e.data.title} aria-label="제목" />
+            <select name="status" aria-label="상태">
+              <option value="scheduled" selected={e.data.status === 'scheduled'}>예정</option>
+              <option value="done" selected={e.data.status === 'done'}>완료</option>
+              <option value="skipped" selected={e.data.status === 'skipped'}>휴방</option>
+            </select>
+            <span class="actions">
+              <button class="btn sm">저장</button>
+              <button class="btn sm danger" name="delete" value="1" data-confirm="이 회차와 자료를 지울까요?">
+                지우기
+              </button>
+            </span>
+          </form>
+        ))
+      }
+    </div>
+    <form method="post" class="ep add">
+      <input type="hidden" name="action" value="add-episode" />
+      <span class="slate muted">+ NEW</span>
+      <input name="date" type="date" required aria-label="날짜" />
+      <span />
+      <select name="presenter" aria-label="발표자">
+        <option value="">미정</option>
+        {d.members.map((m) => <option value={m.uid}>{m.data.name}</option>)}
+      </select>
+      <input name="title" placeholder="제목 (선택)" aria-label="제목" />
+      <span />
+      <span class="actions"><button class="btn sm">회차 추가</button></span>
+    </form>
+  </section>
+
+  <section class="wrap section">
+    <form method="post" class="danger-zone">
+      <input type="hidden" name="action" value="delete-season" />
+      <button class="btn danger" data-confirm={`${season.data.number}기의 모든 회차와 자료가 지워져요. 계속할까요?`}>
+        이 기수 지우기
+      </button>
+    </form>
+  </section>
+</Base>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('[data-confirm]').forEach((b) =>
+    b.addEventListener('click', (ev) => {
+      if (!confirm(b.dataset.confirm)) ev.preventDefault();
+    }),
+  );
+</script>
+
+<style>
+  .head {
+    padding-top: clamp(32px, 6vw, 64px);
+    padding-bottom: 24px;
+  }
+  .big {
+    font-family: var(--font-ko-display);
+    font-size: clamp(36px, 6vw, 64px);
+    margin: 8px 0 0;
+  }
+  .cols {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+    gap: 20px;
+    align-items: start;
+  }
+  .cast {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 6px;
+  }
+  .cast li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+  }
+  .cast label {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .cast .pos {
+    width: 70px;
+    padding: 6px 8px;
+  }
+  .check {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 14px;
+    color: var(--ink-2);
+  }
+  .eps {
+    border-top: 1px solid var(--line);
+  }
+  .ep {
+    display: grid;
+    grid-template-columns: 90px 150px 110px 130px minmax(0, 1fr) 90px auto;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .ep input,
+  .ep select {
+    padding: 7px 9px;
+    font-size: 14px;
+  }
+  .ep .slate {
+    text-decoration: none;
+    font-size: 11px;
+  }
+  .ep.add {
+    border-bottom: 0;
+  }
+  @media (max-width: 960px) {
+    .ep {
+      grid-template-columns: 1fr 1fr;
+    }
+    .ep .slate {
+      grid-column: 1 / -1;
+    }
+  }
+  .btn.sm {
+    padding: 5px 12px;
+    font-size: 12px;
+  }
+  .danger-zone {
+    padding-top: 24px;
+    border-top: 1px dashed var(--line);
+  }
+</style>

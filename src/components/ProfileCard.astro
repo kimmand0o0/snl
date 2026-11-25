@@ -1,11 +1,11 @@
 ---
 /**
- * 커스텀 카드(src/content/cards/<id>.html)가 있으면 앞면은 sandbox iframe, 뒷면은 기본 카드.
+ * 커스텀 카드(/me 에서 저장한 HTML)가 있으면 앞면은 sandbox iframe, 뒷면은 기본 카드.
  * FLIP 버튼으로 3D 회전하며 뒤집습니다. 커스텀 카드가 없으면 기본 카드만.
  * iframe 은 allow-same-origin 이 없어서 사이트 쿠키·DOM 에 접근할 수 없습니다.
  */
 import DefaultCard from './DefaultCard.astro';
-import { customCardOf, type Member } from '../lib/data';
+import type { Member } from '../lib/data';
 import { buildCardDoc, CARD_HEIGHT, CARD_WIDTH } from '../lib/card';
 
 interface Props {
@@ -16,7 +16,7 @@ interface Props {
 }
 const { member, cohorts, variant = 'auto', link = true } = Astro.props;
 const m = member.data;
-const custom = variant === 'auto' ? customCardOf(member.id) : undefined;
+const custom = variant === 'auto' ? member.card : undefined;
 const doc =
   custom &&
   buildCardDoc(custom, {

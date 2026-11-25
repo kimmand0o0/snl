@@ -276,3 +276,78 @@ img {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ───────── 폼 ───────── */
+.form {
+  display: grid;
+  gap: 16px;
+}
+.field {
+  display: grid;
+  gap: 6px;
+}
+.field > span {
+  font: 700 12px var(--font-mono);
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+}
+.field small {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.row2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 16px;
+}
+input:not([type='checkbox'], [type='radio'], [type='color'], [type='file']),
+textarea,
+select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--stage);
+  color: var(--ink);
+  font: 15px var(--font-body);
+}
+textarea {
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.6;
+}
+textarea.code {
+  font: 13px/1.55 var(--font-mono);
+  min-height: 320px;
+  tab-size: 2;
+}
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--bulb);
+  outline-offset: 1px;
+}
+.panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--stage-2);
+  padding: clamp(18px, 3vw, 28px);
+}
+.panel > h2,
+.panel > h3 {
+  margin-top: 0;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.btn.danger {
+  border-color: color-mix(in oklab, var(--onair) 60%, transparent);
+  color: #ff8a7d;
+  background: transparent;
+}
+.muted {
+  color: var(--ink-3);
+}

@@ -1,0 +1,52 @@
+<!-- 템플릿: 터미널 부팅 시퀀스 -->
+<style>
+  .term {
+    height: 100%;
+    border-radius: 18px;
+    background: #0b0f0b;
+    border: 1px solid #1f3a1f;
+    color: #8affa0;
+    font: 13px/1.6 'JetBrains Mono', ui-monospace, monospace;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    box-shadow: inset 0 0 60px #00ff4012;
+  }
+  .bar { display: flex; gap: 6px; padding: 10px 12px; background: #111811; border-bottom: 1px solid #1f3a1f; }
+  .bar i { width: 10px; height: 10px; border-radius: 50%; background: #2a3a2a; }
+  .bar i:first-child { background: #ff5f57; }
+  .bar span { margin-left: auto; font-size: 11px; color: #4c7a4c; }
+  pre { margin: 0; padding: 16px; white-space: pre-wrap; flex: 1; }
+  .big { font-size: 34px; font-weight: 700; color: #eaffea; line-height: 1.1; text-shadow: 0 0 12px #8affa088; }
+  .cursor { display: inline-block; width: 8px; height: 15px; background: #8affa0; vertical-align: -2px; animation: b 1s steps(1) infinite; }
+  @keyframes b { 50% { opacity: 0; } }
+  /* CRT 스캔라인 */
+  .term::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: 18px;
+    background: repeating-linear-gradient(#0000 0 2px, #0003 2px 3px); }
+  a { color: #ffc531; }
+</style>
+<div class="term">
+  <div class="bar"><i></i><i></i><i></i><span>~/snl/cast/{{handle}}</span></div>
+  <pre id="out"></pre>
+</div>
+<script>
+  const lines = [
+    '$ whoami',
+    '<span class="big">{{name}}</span>',
+    '{{role}}',
+    '',
+    '$ cat stack.txt',
+    '{{stack}}'.split(',').join('  '),
+    '',
+    '$ echo $MOTTO',
+    '"{{tagline}}"',
+    '',
+    '$ open <a href="https://github.com/{{github}}">github/{{github}}</a>',
+  ];
+  const out = document.getElementById('out');
+  let i = 0;
+  (function next() {
+    if (i >= lines.length) { out.insertAdjacentHTML('beforeend', '$ <span class="cursor"></span>'); return; }
+    out.insertAdjacentHTML('beforeend', lines[i++] + '\n');
+    setTimeout(next, 180);
+  })();
+</script>

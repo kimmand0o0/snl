@@ -1,0 +1,167 @@
+---
+import Base from '../../layouts/Base.astro';
+import { loadAll, formatDate, initials, slate } from '../../lib/data';
+import { renderMarkdown } from '../../lib/markdown';
+
+const d = await loadAll(Astro.locals.supabase);
+// 초안은 RLS 때문에 작성자·관리자에게만 내려옵니다.
+const post = d.allPosts.find((p) => p.id === Astro.params.slug);
+if (!post) return new Response('글을 찾을 수 없어요', { status: 404 });
+const a = d.memberById.get(post.data.author.id)!;
+const ep = post.data.episode && d.episodes.find((e) => e.id === post.data.episode!.id);
+const { html, headings } = await renderMarkdown(post.body);
+const minutes = Math.max(1, Math.round(post.body.length / 700));
+const canEdit = Boolean(Astro.locals.me && (Astro.locals.me.id === post.authorUid || Astro.locals.me.is_admin));
+---
+
+<Base title={post.data.title} description={post.data.description}>
+  <article class="wrap post" style={`--accent:${a.data.accent}`}>
+    <header>
+      {
+        ep && (
+          <a class="from" href={`/episodes/${ep.id}`}>
+            <span class="slate">{slate(d.seasonOf(ep).data.number, ep.data.number)}</span>
+            {ep.data.title} 발표에서
+          </a>
+        )
+      }
+      <h1 class="title">{post.data.title}</h1>
+      {post.data.description && <p class="desc">{post.data.description}</p>}
+      <p class="byline">
+        <a href={`/cast/${a.id}`} class="author">
+          <span class="av">{initials(a.data.name)}</span>
+          {a.data.name}
+        </a>
+        <span>{formatDate(post.data.date)}</span>
+        <span>{minutes}분</span>
+        {post.data.draft && <span class="chip">초안</span>}
+        {canEdit && <a href={`/blog/write?slug=${post.id}`}>✎ 수정</a>}
+      </p>
+    </header>
+    <div class="body">
+      <div class="prose" set:html={html} />
+      {
+        headings.filter((h) => h.depth <= 3).length > 2 && (
+          <nav class="toc" aria-label="목차">
+            <p class="eyebrow">On this page</p>
+            {headings
+              .filter((h) => h.depth <= 3)
+              .map((h) => (
+                <a href={`#${h.slug}`} class={`d${h.depth}`}>
+                  {h.text}
+                </a>
+              ))}
+          </nav>
+        )
+      }
+    </div>
+    {
+      post.data.tags.length > 0 && (
+        <p class="tags">
+          {post.data.tags.map((t) => (
+            <span class="chip">#{t}</span>
+          ))}
+        </p>
+      )
+    }
+  </article>
+</Base>
+
+<style>
+  .post {
+    padding-top: clamp(32px, 6vw, 64px);
+  }
+  .from {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: var(--ink-2);
+    text-decoration: none;
+  }
+  .title {
+    font-size: clamp(32px, 5vw, 52px);
+    font-weight: 800;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+    margin: 16px 0 12px;
+    max-width: 20em;
+  }
+  .desc {
+    font-size: 19px;
+    color: var(--ink-2);
+    margin: 0;
+    max-width: 36em;
+  }
+  .byline {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 24px 0 0;
+    padding-bottom: 28px;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+    color: var(--ink-3);
+  }
+  .author {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--ink);
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .av {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--cue-ink);
+    font-size: 10px;
+    font-weight: 800;
+  }
+  .body {
+    display: grid;
+    grid-template-columns: minmax(0, 720px) 1fr;
+    gap: 64px;
+    margin-top: 36px;
+  }
+  .toc {
+    position: sticky;
+    top: 96px;
+    align-self: start;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 14px;
+    border-left: 1px solid var(--line);
+    padding-left: 18px;
+  }
+  .toc a {
+    color: var(--ink-2);
+    text-decoration: none;
+  }
+  .toc a:hover {
+    color: var(--accent);
+  }
+  .toc .d3 {
+    padding-left: 12px;
+    font-size: 13px;
+  }
+  @media (max-width: 1000px) {
+    .body {
+      grid-template-columns: 1fr;
+    }
+    .toc {
+      display: none;
+    }
+  }
+  .tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 48px;
+  }
+</style>

@@ -1,0 +1,117 @@
+---
+import Base from '../../layouts/Base.astro';
+import { loadAll, slate } from '../../lib/data';
+import { back, explain, list, opt, slugify, str } from '../../lib/forms';
+
+const db = Astro.locals.supabase;
+const me = Astro.locals.me!;
+const d = await loadAll(db);
+const editing = Astro.url.searchParams.get('slug');
+const post = editing ? d.allPosts.find((p) => p.id === editing) : undefined;
+if (editing && !post) return new Response('글을 찾을 수 없어요', { status: 404 });
+if (post && post.authorUid !== me.id && !me.is_admin) return back(Astro.url, '내 글만 고칠 수 있어요.', `/blog/${post.id}`);
+
+if (Astro.request.method === 'POST') {
+  const fd = await Astro.request.formData();
+  const here = editing ? `/blog/write?slug=${editing}` : '/blog/write';
+  if (fd.get('action') === 'delete' && post) {
+    const { error } = await db.from('posts').delete().eq('id', post.dbId);
+    return back(Astro.url, error ? explain(error) : '글을 지웠어요.', error ? here : '/blog');
+  }
+  const title = str(fd, 'title');
+  const slug = slugify(str(fd, 'slug')) || slugify(title) || `post-${Date.now().toString(36)}`;
+  const episodeId = Number(str(fd, 'episode')) || null;
+  const draft = fd.get('draft') === 'on';
+  const row = {
+    title,
+    slug,
+    description: opt(fd, 'description'),
+    tags: list(fd, 'tags'),
+    episode_id: episodeId,
+    body: str(fd, 'body'),
+    draft,
+    updated_at: new Date().toISOString(),
+    // 초안에서 처음 공개할 때 발행일을 지금으로
+    ...(post?.data.draft && !draft && { published_at: new Date().toISOString() }),
+  };
+  const { error } = post
+    ? await db.from('posts').update(row).eq('id', post.dbId)
+    : await db.from('posts').insert({ ...row, author_id: me.id });
+  if (error) return back(Astro.url, explain(error), here);
+  return back(Astro.url, draft ? '초안으로 저장했어요.' : '글을 올렸어요!', `/blog/${slug}`);
+}
+
+const eps = [...d.episodes].reverse();
+---
+
+<Base title={post ? '글 고치기' : '글 쓰기'}>
+  <section class="wrap head">
+    <p class="eyebrow">Backstage notes</p>
+    <h1 class="display big">{post ? '글 고치기' : '글 쓰기'}</h1>
+  </section>
+  <section class="wrap">
+    <form method="post" class="form panel">
+      <label class="field"><span>제목</span><input name="title" required maxlength="120" value={post?.data.title ?? ''} /></label>
+      <div class="row2">
+        <label class="field">
+          <span>주소</span>
+          <input name="slug" value={post?.id ?? ''} placeholder="비우면 자동 (영문)" pattern="[a-z0-9\-]*" />
+          <small>/blog/<b>이-부분</b></small>
+        </label>
+        <label class="field">
+          <span>관련 회차 (선택)</span>
+          <select name="episode">
+            <option value="">없음</option>
+            {eps.map((e) => (
+              <option value={e.dbId} selected={post?.data.episode?.id === e.id}>
+                {slate(d.seasonOf(e).data.number, e.data.number)} {e.data.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <label class="field"><span>요약</span><input name="description" maxlength="200" value={post?.data.description ?? ''} /></label>
+      <label class="field"><span>태그 (쉼표로 구분)</span><input name="tags" value={post?.data.tags.join(', ') ?? ''} /></label>
+      <label class="field">
+        <span>본문 (마크다운)</span>
+        <textarea name="body" class="code" rows="22" required>{post?.body ?? ''}</textarea>
+        <small>```ts 처럼 언어를 적으면 코드 하이라이팅돼요.</small>
+      </label>
+      <label class="check"><input type="checkbox" name="draft" checked={post?.data.draft ?? false} /> 초안으로 저장 (나와 관리자만 보여요)</label>
+      <div class="actions">
+        <button class="btn primary">{post ? '저장' : '올리기'}</button>
+        {post && <a class="btn" href={`/blog/${post.id}`}>취소</a>}
+      </div>
+    </form>
+    {
+      post && (
+        <form method="post" class="del">
+          <input type="hidden" name="action" value="delete" />
+          <button class="btn danger" onclick="return confirm('이 글을 지울까요? 되돌릴 수 없어요.')">글 지우기</button>
+        </form>
+      )
+    }
+  </section>
+</Base>
+
+<style>
+  .head {
+    padding-top: clamp(32px, 6vw, 64px);
+    padding-bottom: 24px;
+  }
+  .big {
+    font-family: var(--font-ko-display);
+    font-size: clamp(44px, 8vw, 80px);
+    margin: 8px 0 0;
+  }
+  .check {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 14px;
+    color: var(--ink-2);
+  }
+  .del {
+    margin-top: 16px;
+  }
+</style>

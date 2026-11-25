@@ -3,7 +3,7 @@ import Base from '../../layouts/Base.astro';
 import PostList from '../../components/PostList.astro';
 import { loadAll } from '../../lib/data';
 
-const d = await loadAll();
+const d = await loadAll(Astro.locals.supabase);
 const authorOf = (p: (typeof d.posts)[number]) => d.memberById.get(p.data.author.id)!;
 const tags = [...new Set(d.posts.flatMap((p) => p.data.tags))].sort();
 ---
@@ -12,11 +12,13 @@ const tags = [...new Set(d.posts.flatMap((p) => p.data.tags))].sort();
   <section class="wrap head">
     <p class="eyebrow">Backstage notes</p>
     <h1 class="display big">블로그</h1>
+    {Astro.locals.me && <a class="btn primary write" href="/blog/write">✎ 글 쓰기</a>}
     <p class="tags">
       {tags.map((t) => <span class="chip">#{t}</span>)}
     </p>
   </section>
   <section class="wrap">
+    {!d.posts.length && <p class="empty">아직 올라온 글이 없어요.</p>}
     <PostList posts={d.posts} authorOf={authorOf} />
   </section>
 </Base>
@@ -36,5 +38,12 @@ const tags = [...new Set(d.posts.flatMap((p) => p.data.tags))].sort();
     flex-wrap: wrap;
     gap: 6px;
     margin: 0;
+  }
+  .empty {
+    color: var(--ink-2);
+    padding: 40px 0;
+  }
+  .write {
+    margin-bottom: 16px;
   }
 </style>

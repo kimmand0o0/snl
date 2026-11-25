@@ -1,26 +1,74 @@
 ---
-import { render } from 'astro:content';
 import Base from '../../layouts/Base.astro';
 import ProfileCard from '../../components/ProfileCard.astro';
 import Materials from '../../components/Materials.astro';
-import { loadAll, formatDate, slate, type Episode } from '../../lib/data';
+import { loadAll, formatDate, slate, canEditEpisode } from '../../lib/data';
+import { renderMarkdown } from '../../lib/markdown';
+import { TYPE_META, type MaterialType } from '../../lib/materials';
+import { publicConfig } from '../../lib/supabase';
+import { back, explain, isHttpUrl, list, opt, str } from '../../lib/forms';
 
-export async function getStaticPaths() {
-  const { episodes } = await loadAll();
-  return episodes.map((e) => ({ params: { id: e.id }, props: { id: e.id } }));
+const db = Astro.locals.supabase;
+const me = Astro.locals.me;
+const d = await loadAll(db);
+const idx = d.episodes.findIndex((e) => e.id === Astro.params.id);
+if (idx < 0) return new Response('회차를 찾을 수 없어요', { status: 404 });
+const e = d.episodes[idx];
+const canEdit = canEditEpisode(me, e);
+
+// ───── 발표자/관리자의 수정 요청 ─────
+if (Astro.request.method === 'POST') {
+  if (!canEdit) return back(Astro.url, '이 회차를 고칠 권한이 없어요.');
+  const fd = await Astro.request.formData();
+  const action = str(fd, 'action');
+  if (action === 'update') {
+    const status = str(fd, 'status');
+    const { error } = await db
+      .from('episodes')
+      .update({
+        title: str(fd, 'title') || '제목 미정',
+        summary: opt(fd, 'summary'),
+        tags: list(fd, 'tags'),
+        notes: str(fd, 'notes'),
+        ...(['scheduled', 'done', 'skipped'].includes(status) && { status }),
+      })
+      .eq('id', e.dbId);
+    return back(Astro.url, error ? explain(error) : '저장했어요.');
+  }
+  if (action === 'add-material') {
+    const url = str(fd, 'url');
+    if (!isHttpUrl(url)) return back(Astro.url, 'http(s)로 시작하는 링크를 넣어 주세요.', undefined, '#edit');
+    const type = str(fd, 'type');
+    const { error } = await db.from('materials').insert({
+      episode_id: e.dbId,
+      url,
+      label: opt(fd, 'label'),
+      type: type in TYPE_META ? (type as MaterialType) : null,
+      file_path: opt(fd, 'file_path'),
+      created_by: me!.id,
+    });
+    return back(Astro.url, error ? explain(error) : '자료를 추가했어요.', undefined, '#edit');
+  }
+  if (action === 'remove-material') {
+    const row = e.materialRows.find((m) => String(m.id) === str(fd, 'id'));
+    if (row) {
+      const { error } = await db.from('materials').delete().eq('id', row.id);
+      if (error) return back(Astro.url, explain(error), undefined, '#edit');
+      if (row.file_path) await db.storage.from('materials').remove([row.file_path]);
+    }
+    return back(Astro.url, '자료를 지웠어요.', undefined, '#edit');
+  }
+  return back(Astro.url, '알 수 없는 요청이에요.');
 }
 
-const d = await loadAll();
-const idx = d.episodes.findIndex((e) => e.id === Astro.props.id);
-const e = d.episodes[idx] as Episode;
 const season = d.seasonOf(e);
 const p = d.presenterOf(e);
 const prev = d.episodes[idx - 1];
 const nxt = d.episodes[idx + 1];
 const related = d.posts.filter((post) => post.data.episode?.id === e.id);
-const { Content } = await render(e);
-const hasBody = Boolean(e.body?.trim());
+const notes = e.body.trim() ? await renderMarkdown(e.body) : undefined;
 const statusLabel = { scheduled: '방송 예정', done: '방송 완료', skipped: '휴방' }[e.data.status];
+const cfg = canEdit ? publicConfig() : undefined;
 ---
 
 <Base title={`${slate(season.data.number, e.data.number)} ${e.data.title}`} description={e.data.summary}>
@@ -30,10 +78,12 @@ const statusLabel = { scheduled: '방송 예정', done: '방송 완료', skipped
         <span class="slate">{slate(season.data.number, e.data.number)}</span>
         <a href={`/schedule#${season.id}`} class="season">{season.data.number}기 · {season.data.title}</a>
         <span class:list={['status', e.data.status]}>{statusLabel}</span>
+        {canEdit && <a class="btn edit-link" href="#edit">✎ 자료 올리기 · 수정</a>}
       </p>
       <h1 class="title">{e.data.title}</h1>
       <p class="when">
-        {formatDate(e.data.date)} {d.timeOf(e)} · {season.data.place} · 호스트 <a href={`/cast/${p.id}`}>{p.data.name}</a>
+        {formatDate(e.data.date)} {d.timeOf(e)} · {season.data.place} · 호스트{' '}
+        {p.id ? <a href={`/cast/${p.id}`}>{p.data.name}</a> : p.data.name}
       </p>
       {e.data.summary && <p class="summary">{e.data.summary}</p>}
       {
@@ -53,12 +103,10 @@ const statusLabel = { scheduled: '방송 예정', done: '방송 완료', skipped
         <Materials items={e.data.materials} stage />
 
         {
-          hasBody && (
+          notes && (
             <>
               <h2 class="h">방송 노트</h2>
-              <div class="prose">
-                <Content />
-              </div>
+              <div class="prose" set:html={notes.html} />
             </>
           )
         }
@@ -77,9 +125,117 @@ const statusLabel = { scheduled: '방송 예정', done: '방송 완료', skipped
             </>
           )
         }
+
+        {
+          canEdit && cfg && (
+            <section id="edit" class="editor">
+              <h2 class="h">자료 올리기</h2>
+              <div class="panel">
+                <form
+                  method="post"
+                  class="form"
+                  data-upload
+                  data-url={cfg.url}
+                  data-key={cfg.key}
+                  data-episode={e.dbId}
+                >
+                  <input type="hidden" name="action" value="add-material" />
+                  <input type="hidden" name="file_path" />
+                  <label class="drop">
+                    <input type="file" accept=".pdf,.key,.pptx,.png,.jpg,.jpeg,.gif,.webp,.zip,.md" />
+                    <b>파일 올리기</b>
+                    <span>PDF·이미지·pptx 등을 끌어다 놓거나 눌러서 선택 (최대 50MB)</span>
+                    <span class="progress" aria-live="polite" />
+                  </label>
+                  <p class="or">또는 링크</p>
+                  <div class="row2">
+                    <label class="field">
+                      <span>링크</span>
+                      <input name="url" type="url" placeholder="https://docs.google.com/presentation/..." required />
+                      <small>구글 슬라이드·유튜브·피그마·PDF는 페이지 안에서 바로 보여요.</small>
+                    </label>
+                    <label class="field">
+                      <span>이름 (선택)</span>
+                      <input name="label" placeholder="발표 슬라이드" />
+                    </label>
+                  </div>
+                  <label class="field">
+                    <span>종류</span>
+                    <select name="type">
+                      <option value="">자동 감지</option>
+                      {Object.entries(TYPE_META).map(([k, v]) => (
+                        <option value={k}>{v.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div class="actions">
+                    <button class="btn primary">추가</button>
+                  </div>
+                </form>
+
+                {
+                  e.materialRows.length > 0 && (
+                    <ul class="mine">
+                      {e.materialRows.map((m) => (
+                        <li>
+                          <span>
+                            {m.label || m.url}
+                            {m.file_path && <small> · 업로드한 파일</small>}
+                          </span>
+                          <form method="post">
+                            <input type="hidden" name="action" value="remove-material" />
+                            <input type="hidden" name="id" value={m.id} />
+                            <button class="btn danger" data-confirm="이 자료를 지울까요?">
+                              지우기
+                            </button>
+                          </form>
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                }
+              </div>
+
+              <h2 class="h">회차 정보</h2>
+              <form method="post" class="form panel">
+                <input type="hidden" name="action" value="update" />
+                <label class="field">
+                  <span>제목</span>
+                  <input name="title" value={e.data.title} required maxlength="120" />
+                </label>
+                <label class="field">
+                  <span>한 줄 소개</span>
+                  <input name="summary" value={e.data.summary ?? ''} maxlength="200" />
+                </label>
+                <div class="row2">
+                  <label class="field">
+                    <span>태그 (쉼표로 구분)</span>
+                    <input name="tags" value={e.data.tags.join(', ')} placeholder="postgres, 동시성" />
+                  </label>
+                  <label class="field">
+                    <span>상태</span>
+                    <select name="status">
+                      <option value="scheduled" selected={e.data.status === 'scheduled'}>방송 예정</option>
+                      <option value="done" selected={e.data.status === 'done'}>방송 완료</option>
+                      <option value="skipped" selected={e.data.status === 'skipped'}>휴방</option>
+                    </select>
+                  </label>
+                </div>
+                <label class="field">
+                  <span>방송 노트 (마크다운)</span>
+                  <textarea name="notes" rows="10" placeholder="## 오늘 다룬 것&#10;- ...">{e.body}</textarea>
+                </label>
+                <div class="actions">
+                  <button class="btn primary">저장</button>
+                  {me?.is_admin && <a class="btn" href={`/admin/seasons/${season.data.number}`}>편성 수정 (관리자)</a>}
+                </div>
+              </form>
+            </section>
+          )
+        }
       </div>
       <aside class="side">
-        <ProfileCard member={p} cohorts={d.cohortsOf(p.id)} />
+        {p.id ? <ProfileCard member={p} cohorts={d.cohortsOf(p.id)} /> : <p class="muted">발표자 미정</p>}
       </aside>
     </div>
 
@@ -105,6 +261,54 @@ const statusLabel = { scheduled: '방송 예정', done: '방송 완료', skipped
     </nav>
   </article>
 </Base>
+
+<script>
+  import { createBrowserClient } from '@supabase/ssr';
+
+  // 파일은 서버를 거치지 않고 브라우저에서 바로 Storage 로 올린 뒤, 공개 주소를 자료로 등록합니다.
+  const form = document.querySelector<HTMLFormElement>('form[data-upload]');
+  if (form) {
+    const { url, key, episode } = form.dataset as { url: string; key: string; episode: string };
+    const sb = createBrowserClient(url, key);
+    const file = form.querySelector<HTMLInputElement>('input[type=file]')!;
+    const drop = form.querySelector<HTMLElement>('.drop')!;
+    const progress = form.querySelector<HTMLElement>('.progress')!;
+    const upload = async (f: File) => {
+      if (f.size > 50 * 1024 * 1024) return (progress.textContent = '50MB 이하 파일만 올릴 수 있어요.');
+      progress.textContent = `올리는 중… ${f.name}`;
+      // Storage 키는 ASCII 만 허용돼서 파일명을 정리합니다. 원래 이름은 자료 이름으로 남겨요.
+      const ext = f.name.match(/\.[a-z0-9]{1,8}$/i)?.[0] ?? '';
+      const safe = f.name.slice(0, f.name.length - ext.length).replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'file';
+      const path = `${episode}/${Date.now()}-${safe}${ext.toLowerCase()}`;
+      const { error } = await sb.storage.from('materials').upload(path, f, { contentType: f.type || undefined });
+      if (error) return (progress.textContent = `업로드 실패: ${error.message}`);
+      const pub = sb.storage.from('materials').getPublicUrl(path).data.publicUrl;
+      form.querySelector<HTMLInputElement>('[name=url]')!.value = pub;
+      form.querySelector<HTMLInputElement>('[name=file_path]')!.value = path;
+      const label = form.querySelector<HTMLInputElement>('[name=label]')!;
+      if (!label.value) label.value = f.name.replace(/\.[^.]+$/, '');
+      progress.textContent = '업로드 완료! 등록하는 중…';
+      form.requestSubmit();
+    };
+    file.addEventListener('change', () => file.files?.[0] && upload(file.files[0]));
+    drop.addEventListener('dragover', (ev) => {
+      ev.preventDefault();
+      drop.classList.add('over');
+    });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (ev) => {
+      ev.preventDefault();
+      drop.classList.remove('over');
+      const f = ev.dataTransfer?.files[0];
+      if (f) upload(f);
+    });
+  }
+  document.querySelectorAll<HTMLButtonElement>('[data-confirm]').forEach((b) =>
+    b.addEventListener('click', (ev) => {
+      if (!confirm(b.dataset.confirm)) ev.preventDefault();
+    }),
+  );
+</script>
 
 <style>
   .ep {
@@ -217,5 +421,71 @@ const statusLabel = { scheduled: '방송 예정', done: '방송 완료', skipped
   .pager small {
     font: 12px var(--font-mono);
     color: var(--ink-3);
+  }
+  .edit-link {
+    margin-left: auto;
+    padding: 6px 14px;
+    font-size: 13px;
+  }
+  .editor {
+    scroll-margin-top: 90px;
+  }
+  .drop {
+    display: grid;
+    gap: 4px;
+    place-items: center;
+    text-align: center;
+    padding: 28px 16px;
+    border: 2px dashed var(--line);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .drop:hover,
+  .drop.over {
+    border-color: var(--bulb);
+    background: #ffc5310d;
+  }
+  .drop input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+  }
+  .drop span {
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+  .drop .progress {
+    color: var(--bulb);
+  }
+  .or {
+    margin: 0;
+    text-align: center;
+    font: 12px var(--font-mono);
+    color: var(--ink-3);
+  }
+  .mine {
+    list-style: none;
+    padding: 0;
+    margin: 20px 0 0;
+    border-top: 1px solid var(--line);
+  }
+  .mine li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+    word-break: break-all;
+  }
+  .mine form {
+    flex: none;
+  }
+  .mine .btn {
+    padding: 4px 12px;
+    font-size: 12px;
   }
 </style>

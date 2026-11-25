@@ -3,7 +3,7 @@ import Base from '../../layouts/Base.astro';
 import { loadAll, formatDate, slate } from '../../lib/data';
 import { normalizeMaterial, TYPE_META, type MaterialType } from '../../lib/materials';
 
-const d = await loadAll();
+const d = await loadAll(Astro.locals.supabase);
 const { seasons, episodes, presenterOf } = d;
 const withMats = episodes.map((e) => ({ e, mats: e.data.materials.map(normalizeMaterial) }));
 const usedTypes = [...new Set(withMats.flatMap((x) => x.mats.map((m) => m.type)))] as MaterialType[];
@@ -30,8 +30,9 @@ const groups = [...seasons].reverse().map((s) => ({
     </div>
   </section>
 
+  {groups.every((g) => !g.items.length) && <p class="wrap empty">아직 방송된 회차가 없어요.</p>}
   {
-    groups.map(({ s, items }) => (
+    groups.filter((g) => g.items.length).map(({ s, items }) => (
       <section class="wrap season" data-season>
         <h2 class="season-title">
           <span class="display">{s.data.number}기</span> {s.data.title}
@@ -251,5 +252,9 @@ const groups = [...seasons].reverse().map((s) => ({
     margin-top: auto;
     font: 11px var(--font-mono);
     color: #6b6248;
+  }
+  .empty {
+    color: var(--ink-2);
+    padding: 40px 0;
   }
 </style>

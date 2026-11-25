@@ -25,7 +25,7 @@ const main = stage ? list.find((m) => m.embedUrl || m.type === 'image') : undefi
 
 {
   list.length === 0 ? (
-    <p class="empty">아직 올라온 자료가 없어요. 에피소드 파일의 <code>materials</code>에 링크를 추가하세요.</p>
+    <p class="empty">아직 올라온 자료가 없어요.</p>
   ) : (
     <ul class="mats">
       {list.map((m) => (

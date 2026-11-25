@@ -10,8 +10,8 @@ const utc = (day: string, time: string, plusHours = 0) =>
     .replace(/[-:]/g, '')
     .replace(/\.\d{3}/, '');
 
-export const GET: APIRoute = async ({ site }) => {
-  const { episodes, seasonOf, presenterOf, timeOf } = await loadAll();
+export const GET: APIRoute = async ({ site, locals }) => {
+  const { episodes, seasonOf, presenterOf, timeOf } = await loadAll(locals.supabase);
   const base = site?.href ?? 'https://snl.example.com/';
   const stamp = utc(new Date().toISOString().slice(0, 10), '00:00');
   const events = episodes

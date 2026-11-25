@@ -4,7 +4,7 @@ import Calendar from '../components/Calendar.astro';
 import EpisodeRow from '../components/EpisodeRow.astro';
 import { loadAll, formatDate, initials } from '../lib/data';
 
-const d = await loadAll();
+const d = await loadAll(Astro.locals.supabase);
 const { seasons, episodes, seasonOf, presenterOf, timeOf, memberById, next } = d;
 const lineups = [...seasons].reverse().map((s) => ({
   season: s,
@@ -26,7 +26,15 @@ const webcal = new URL('/calendar.ics', site).href.replace(/^https?:/, 'webcal:'
   </section>
 
   <section class="wrap">
-    <Calendar />
+    {
+      seasons.length ? (
+        <Calendar site={d} />
+      ) : (
+        <p class="empty">
+          아직 편성된 기수가 없어요.{Astro.locals.me?.is_admin && <> <a href="/admin">관리 화면</a>에서 첫 기수를 만들어 보세요.</>}
+        </p>
+      )
+    }
   </section>
 
   {
@@ -150,5 +158,9 @@ const webcal = new URL('/calendar.ics', site).href.replace(/^https?:/, 'webcal:'
   }
   .rows {
     border-top: 1px solid var(--line);
+  }
+  .empty {
+    color: var(--ink-2);
+    padding: 40px 0;
   }
 </style>

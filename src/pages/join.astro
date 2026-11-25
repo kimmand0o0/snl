@@ -1,0 +1,126 @@
+---
+import Base from '../layouts/Base.astro';
+import { back, explain, safeNext, slugify, str } from '../lib/forms';
+
+const user = Astro.locals.user;
+const next = safeNext(Astro.url.searchParams.get('next') ?? '/me');
+if (!user) return Astro.redirect(`/login?next=${encodeURIComponent('/join')}`);
+if (Astro.locals.me) return Astro.redirect(next);
+
+const meta = user.user_metadata ?? {};
+const github: string | undefined = user.app_metadata?.provider === 'github' ? meta.user_name : undefined;
+
+if (Astro.request.method === 'POST') {
+  const fd = await Astro.request.formData();
+  const { error } = await Astro.locals.supabase.rpc('join_snl', {
+    code: str(fd, 'code'),
+    p_slug: str(fd, 'slug').toLowerCase(),
+    p_name: str(fd, 'name'),
+    p_avatar: meta.avatar_url ?? meta.picture ?? null,
+    p_github: github ?? null,
+  });
+  if (error) return back(Astro.url, explain(error), `/join?next=${encodeURIComponent(next)}`);
+  return Astro.redirect(`/me?msg=${encodeURIComponent('출연진으로 등록됐어요! 프로필을 채워 주세요.')}`);
+}
+
+const base = slugify(github ?? String(user.email ?? '').split('@')[0]).slice(0, 30);
+const suggested = /^[a-z0-9][a-z0-9-]{1,29}$/.test(base) ? base : '';
+---
+
+<Base title="출연 신청">
+  <section class="wrap join">
+    <div class="cue box">
+      <p class="cue-top"><span class="slate">AUDITION</span><span>출연 신청</span></p>
+      <h1>무대에 설 준비 됐나요?</h1>
+      <p class="sub">{user.email} 계정으로 로그인했어요. 스터디에서 받은 초대 코드를 넣어 주세요.</p>
+      <form method="post" class="form">
+        <label class="field">
+          <span>초대 코드</span>
+          <input name="code" required autocomplete="off" autofocus />
+        </label>
+        <label class="field">
+          <span>이름</span>
+          <input name="name" required maxlength="40" value={meta.full_name ?? meta.name ?? ''} />
+        </label>
+        <label class="field">
+          <span>프로필 주소</span>
+          <input
+            name="slug"
+            required
+            pattern="[a-z0-9][a-z0-9\-]{1,29}"
+            value={suggested}
+            title="영문 소문자·숫자·하이픈 2~30자"
+          />
+          <small>snl-zeta.vercel.app/cast/<b>이-부분</b> · 영문 소문자·숫자·하이픈</small>
+        </label>
+        <button class="btn dark">출연진 등록</button>
+      </form>
+      <form method="post" action="/auth/signout" class="out">
+        <button class="linkish">다른 계정으로 로그인</button>
+      </form>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .join {
+    display: grid;
+    place-items: center;
+    padding-top: clamp(40px, 8vw, 96px);
+  }
+  .box {
+    width: min(100%, 480px);
+    padding: clamp(28px, 5vw, 44px);
+    transform: rotate(0.5deg);
+  }
+  .cue-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font: 700 12px var(--font-mono);
+    letter-spacing: 0.18em;
+    color: #b0331f;
+  }
+  h1 {
+    font-family: var(--font-ko-display);
+    font-weight: 400;
+    font-size: clamp(30px, 6vw, 42px);
+    margin: 18px 0 8px;
+  }
+  .sub {
+    margin: 0 0 22px;
+    color: #4b4430;
+    word-break: break-all;
+  }
+  .box :global(.field > span) {
+    color: #6b6248;
+  }
+  .box input {
+    background: #fffdf3;
+    color: var(--cue-ink);
+    border-color: #0002;
+  }
+  .box small {
+    color: #6b6248;
+  }
+  .btn.dark {
+    justify-content: center;
+    padding: 13px;
+    background: var(--cue-ink);
+    color: var(--cue);
+    border-color: var(--cue-ink);
+  }
+  .out {
+    margin-top: 14px;
+    text-align: center;
+  }
+  .linkish {
+    background: none;
+    border: 0;
+    color: #6b6248;
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: 13px;
+  }
+</style>

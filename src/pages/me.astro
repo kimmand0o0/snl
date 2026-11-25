@@ -1,0 +1,215 @@
+---
+import Base from '../layouts/Base.astro';
+import ProfileCard from '../components/ProfileCard.astro';
+import { loadAll, formatDate, slate, toMember } from '../lib/data';
+import { back, explain, isHttpUrl, list, opt, str } from '../lib/forms';
+
+const db = Astro.locals.supabase;
+const me = Astro.locals.me!; // 미들웨어가 로그인·가입 여부를 확인합니다
+
+if (Astro.request.method === 'POST') {
+  const fd = await Astro.request.formData();
+  const blog = opt(fd, 'blog');
+  const avatar = opt(fd, 'avatar_url');
+  if ((blog && !isHttpUrl(blog)) || (avatar && !isHttpUrl(avatar)))
+    return back(Astro.url, '링크는 http(s)로 시작해야 해요.');
+  // "이름 | 주소" 한 줄에 하나
+  const links = str(fd, 'links')
+    .split('\n')
+    .map((l) => l.split('|').map((x) => x.trim()))
+    .filter(([label, url]) => label && url && isHttpUrl(url))
+    .map(([label, url]) => ({ label, url }));
+  const { error } = await db
+    .from('members')
+    .update({
+      name: str(fd, 'name'),
+      slug: str(fd, 'slug').toLowerCase(),
+      role: str(fd, 'role'),
+      tagline: opt(fd, 'tagline'),
+      accent: str(fd, 'accent') || '#ffc531',
+      stack: list(fd, 'stack'),
+      github: opt(fd, 'github')?.replace(/^@/, '') ?? null,
+      blog,
+      avatar_url: avatar,
+      links,
+      bio: str(fd, 'bio'),
+    })
+    .eq('id', me.id);
+  return back(Astro.url, error ? explain(error) : '프로필을 저장했어요.');
+}
+
+const d = await loadAll(db);
+const member = d.memberByUid.get(me.id) ?? toMember(me);
+const myEps = d.episodes.filter((e) => e.presenterUid === me.id);
+const upcoming = myEps.filter((e) => e.data.status === 'scheduled');
+const myPosts = d.allPosts.filter((p) => p.authorUid === me.id);
+---
+
+<Base title="내 프로필">
+  <section class="wrap head">
+    <p class="eyebrow">Backstage · {me.is_admin ? '관리자' : '출연진'}</p>
+    <h1 class="display big">내 프로필</h1>
+    <div class="actions">
+      <a class="btn" href={`/cast/${member.id}`}>공개 프로필 보기</a>
+      <a class="btn" href="/cast/playground">✦ 카드 꾸미기</a>
+      <a class="btn" href="/blog/write">✎ 글 쓰기</a>
+      {me.is_admin && <a class="btn" href="/admin">관리</a>}
+      <form method="post" action="/auth/signout"><button class="btn">로그아웃</button></form>
+    </div>
+  </section>
+
+  <section class="wrap grid">
+    <form method="post" class="form panel">
+      <div class="row2">
+        <label class="field"><span>이름</span><input name="name" required maxlength="40" value={me.name} /></label>
+        <label class="field">
+          <span>프로필 주소</span>
+          <input name="slug" required pattern="[a-z0-9][a-z0-9\-]{1,29}" value={me.slug} />
+          <small>/cast/{me.slug}</small>
+        </label>
+      </div>
+      <div class="row2">
+        <label class="field"><span>역할</span><input name="role" value={me.role} placeholder="Backend Engineer" /></label>
+        <label class="field">
+          <span>포인트 컬러</span>
+          <input name="accent" type="color" value={me.accent} />
+        </label>
+      </div>
+      <label class="field"><span>한 줄 소개</span><input name="tagline" value={me.tagline ?? ''} maxlength="80" /></label>
+      <label class="field">
+        <span>기술 스택 (쉼표로 구분)</span>
+        <input name="stack" value={me.stack.join(', ')} placeholder="TypeScript, Postgres, Kafka" />
+      </label>
+      <div class="row2">
+        <label class="field"><span>GitHub 아이디</span><input name="github" value={me.github ?? ''} /></label>
+        <label class="field"><span>블로그</span><input name="blog" type="url" value={me.blog ?? ''} placeholder="https://" /></label>
+      </div>
+      <label class="field">
+        <span>프로필 사진 주소</span>
+        <input name="avatar_url" type="url" value={me.avatar_url ?? ''} />
+        <small>비워 두면 이니셜로 보여요. 로그인한 계정 사진이 기본값이에요.</small>
+      </label>
+      <label class="field">
+        <span>다른 링크</span>
+        <textarea name="links" rows="3" placeholder="LinkedIn | https://linkedin.com/in/...">{me.links.map((l) => `${l.label} | ${l.url}`).join('\n')}</textarea>
+        <small>한 줄에 하나씩 “이름 | 주소”</small>
+      </label>
+      <label class="field">
+        <span>자기소개 (마크다운)</span>
+        <textarea name="bio" rows="6">{me.bio}</textarea>
+      </label>
+      <div class="actions"><button class="btn primary">저장</button></div>
+    </form>
+
+    <aside class="side">
+      <ProfileCard member={member} cohorts={d.cohortsOf(member.id)} link={false} />
+
+      <div class="panel mini">
+        <h3>내 발표</h3>
+        {
+          myEps.length ? (
+            <ul>
+              {myEps.map((e) => (
+                <li>
+                  <a href={`/episodes/${e.id}#edit`}>
+                    <span class="slate">{slate(d.seasonOf(e).data.number, e.data.number)}</span> {e.data.title}
+                  </a>
+                  <small>
+                    {formatDate(e.data.date, false)}
+                    {e.data.status === 'scheduled' && e === upcoming[0] && ' · 다음 발표'}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p class="muted">아직 배정된 발표가 없어요.</p>
+          )
+        }
+      </div>
+
+      <div class="panel mini">
+        <h3>내 글</h3>
+        {
+          myPosts.length ? (
+            <ul>
+              {myPosts.map((p) => (
+                <li>
+                  <a href={`/blog/write?slug=${p.id}`}>{p.data.title}</a>
+                  <small>{p.data.draft ? '초안' : formatDate(p.data.date, false)}</small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p class="muted">아직 쓴 글이 없어요.</p>
+          )
+        }
+      </div>
+    </aside>
+  </section>
+</Base>
+
+<style>
+  .head {
+    padding-top: clamp(32px, 6vw, 64px);
+    padding-bottom: 28px;
+  }
+  .big {
+    font-family: var(--font-ko-display);
+    font-size: clamp(44px, 8vw, 80px);
+    margin: 8px 0 20px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 32px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .grid {
+      grid-template-columns: 1fr;
+    }
+    .side {
+      justify-self: center;
+      width: min(100%, 320px);
+    }
+  }
+  .side {
+    display: grid;
+    gap: 16px;
+  }
+  .mini h3 {
+    font-size: 15px;
+    margin-bottom: 10px;
+  }
+  .mini ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 10px;
+  }
+  .mini li {
+    display: grid;
+    gap: 2px;
+    font-size: 14px;
+  }
+  .mini a {
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .mini small {
+    color: var(--ink-3);
+    font-size: 12px;
+  }
+  .mini .slate {
+    font-size: 10px;
+  }
+  input[type='color'] {
+    width: 100%;
+    height: 44px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--stage);
+    padding: 4px;
+  }
+</style>

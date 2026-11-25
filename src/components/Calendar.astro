@@ -2,9 +2,12 @@
 /**
  * 월간 편성 달력. 모든 달을 정적으로 렌더링하고, 브라우저에서 오늘이 속한 달을 먼저 보여줍니다.
  */
-import { loadAll, ymd, slate, initials } from '../lib/data';
+import { ymd, slate, initials, type Site } from '../lib/data';
 
-const { episodes, seasons, seasonOf, presenterOf, timeOf, next } = await loadAll();
+interface Props {
+  site: Site;
+}
+const { episodes, seasons, seasonOf, presenterOf, timeOf, next } = Astro.props.site;
 
 // 첫 기수 시작 달 ~ 마지막 회차(또는 기수 종료) 달
 const first = seasons[0]?.data.start ?? new Date();

@@ -1,0 +1,28 @@
+<!-- 템플릿: 신스웨이브 -->
+<style>
+  .synth { position: relative; height: 100%; overflow: hidden; padding: 26px; display: flex; flex-direction: column;
+    color: #fff; background: linear-gradient(#170828, #2d0f3f 55%, #ff3d7f 150%); border-radius: 18px;
+    font-family: Pretendard, system-ui, sans-serif; }
+  .sun { position: absolute; left: 50%; top: 96px; width: 180px; height: 180px; margin-left: -90px; border-radius: 50%;
+    background: linear-gradient(#ffd23f, #ff3d7f);
+    -webkit-mask: linear-gradient(#000 48%, transparent 48%), repeating-linear-gradient(#000 0 10px, transparent 10px 16px);
+    mask: linear-gradient(#000 48%, transparent 48%), repeating-linear-gradient(#000 0 10px, transparent 10px 16px);
+    filter: drop-shadow(0 0 26px #ff3d7f); }
+  .grid { position: absolute; left: -50%; right: -50%; bottom: -20px; height: 210px;
+    transform: perspective(300px) rotateX(62deg); transform-origin: bottom;
+    background: repeating-linear-gradient(90deg, {{accent}}66 0 1px, transparent 1px 36px),
+      repeating-linear-gradient({{accent}}66 0 1px, transparent 1px 26px);
+    animation: run 1.4s linear infinite; }
+  @keyframes run { to { background-position: 0 0, 0 26px; } }
+  .tg { position: relative; margin: 0; font: 700 11px ui-monospace, monospace; letter-spacing: .2em; color: {{accent}}; }
+  .nm { position: relative; margin: auto 0 0; font-size: 60px; font-weight: 900; line-height: 1;
+    text-shadow: 3px 3px 0 #ff3d7f, 6px 6px 0 #0006; }
+  .rl { position: relative; margin: 8px 0 0; font-size: 14px; opacity: .88; }
+</style>
+<div class="synth">
+  <div class="sun"></div>
+  <div class="grid"></div>
+  <p class="tg">SNL · {{cohorts}}기 · ON CALL</p>
+  <p class="nm">{{name}}</p>
+  <p class="rl">{{role}}<br>{{tagline}}</p>
+</div>

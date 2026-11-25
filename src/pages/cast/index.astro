@@ -3,7 +3,7 @@ import Base from '../../layouts/Base.astro';
 import ProfileCard from '../../components/ProfileCard.astro';
 import { loadAll } from '../../lib/data';
 
-const d = await loadAll();
+const d = await loadAll(Astro.locals.supabase);
 const { members, seasons, cohortsOf, currentSeason } = d;
 const sorted = [...members].sort((a, b) => a.data.name.localeCompare(b.data.name, 'ko'));
 ---
@@ -23,11 +23,12 @@ const sorted = [...members].sort((a, b) => a.data.name.localeCompare(b.data.name
           ))
         }
       </div>
-      <a class="btn" href="/cast/playground">✦ 내 카드 꾸미기</a>
+      <a class="btn" href={Astro.locals.me ? '/cast/playground' : '/join'}>{Astro.locals.me ? '✦ 내 카드 꾸미기' : '✦ 출연 신청'}</a>
     </div>
   </section>
 
   <section class="wrap">
+    {!sorted.length && <p class="empty">아직 등록한 출연진이 없어요. 초대 코드가 있다면 첫 번째 출연자가 되어 주세요!</p>}
     <ul class="grid">
       {
         sorted.map((m) => (
@@ -102,5 +103,9 @@ const sorted = [...members].sort((a, b) => a.data.name.localeCompare(b.data.name
       grid-template-columns: 1fr;
       justify-items: center;
     }
+  }
+  .empty {
+    color: var(--ink-2);
+    padding: 40px 0;
   }
 </style>

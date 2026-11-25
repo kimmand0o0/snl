@@ -7,7 +7,7 @@
  */
 import { loadAll, ymd, slate } from '../lib/data';
 
-const { episodes, seasonOf, presenterOf, timeOf } = await loadAll();
+const { episodes, seasonOf, presenterOf, timeOf } = await loadAll(Astro.locals.supabase);
 const schedule = episodes
   .filter((e) => e.data.status === 'scheduled')
   .map((e) => ({

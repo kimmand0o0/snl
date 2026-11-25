@@ -4,8 +4,8 @@ import { loadAll } from '../lib/data';
 const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
-export const GET: APIRoute = async ({ site }) => {
-  const { posts, memberById } = await loadAll();
+export const GET: APIRoute = async ({ site, locals }) => {
+  const { posts, memberById } = await loadAll(locals.supabase);
   const base = site?.href ?? 'https://snl.example.com/';
   const items = posts
     .map((p) => {

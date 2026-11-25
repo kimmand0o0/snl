@@ -1,24 +1,21 @@
 ---
-import { render } from 'astro:content';
 import Base from '../../layouts/Base.astro';
 import ProfileCard from '../../components/ProfileCard.astro';
 import EpisodeRow from '../../components/EpisodeRow.astro';
 import PostList from '../../components/PostList.astro';
-import { loadAll, customCardOf } from '../../lib/data';
+import { loadAll } from '../../lib/data';
+import { renderMarkdown } from '../../lib/markdown';
 
-export async function getStaticPaths() {
-  const { members } = await loadAll();
-  return members.map((m) => ({ params: { id: m.id }, props: { id: m.id } }));
-}
-
-const d = await loadAll();
-const m = d.memberById.get(Astro.props.id)!;
+const d = await loadAll(Astro.locals.supabase);
+const m = d.memberById.get(Astro.params.id ?? '');
+if (!m) return new Response('출연진을 찾을 수 없어요', { status: 404 });
+const isMe = Astro.locals.me?.id === m.uid;
 const cohorts = d.cohortsOf(m.id);
-const hasCustom = Boolean(customCardOf(m.id));
+const hasCustom = Boolean(m.card);
 const eps = d.episodes.filter((e) => e.data.presenter.id === m.id).reverse();
 const posts = d.posts.filter((p) => p.data.author.id === m.id);
 const authorOf = () => m;
-const { Content } = await render(m);
+const bio = m.bio.trim() ? (await renderMarkdown(m.bio)).html : '';
 const links = [
   ...(m.data.github ? [{ label: 'GitHub', url: `https://github.com/${m.data.github}` }] : []),
   ...(m.data.blog ? [{ label: 'Blog', url: m.data.blog }] : []),
@@ -31,9 +28,9 @@ const links = [
     <div class="card-col">
       <ProfileCard member={m} cohorts={cohorts} link={false} />
       {
-        !hasCustom && (
-          <a class="hint" href={`/cast/playground?member=${m.id}`}>
-            ✦ 아직 커스텀 카드가 없어요 — 꾸미러 가기
+        isMe && (
+          <a class="hint" href="/cast/playground">
+            {hasCustom ? '✎ 내 카드 고치기' : '✦ 아직 커스텀 카드가 없어요 — 꾸미러 가기'}
           </a>
         )
       }
@@ -55,7 +52,8 @@ const links = [
           </p>
         )
       }
-      <div class="prose bio"><Content /></div>
+      {bio && <div class="prose bio" set:html={bio} />}
+      {isMe && <p><a class="btn" href="/me">✎ 프로필 수정</a></p>}
       {
         m.data.stack.length > 0 && (
           <p class="stack">

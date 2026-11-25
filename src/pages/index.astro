@@ -6,9 +6,9 @@ import PostList from '../components/PostList.astro';
 import BulbSign from '../components/BulbSign.astro';
 import { loadAll, formatDate, slate, ymd } from '../lib/data';
 
-const d = await loadAll();
+const d = await loadAll(Astro.locals.supabase);
 const { next, currentSeason, seasonOf, presenterOf, timeOf, memberById, cohortsOf } = d;
-const cast = currentSeason?.data.cast.map((c) => memberById.get(c.id)!) ?? [];
+const cast = currentSeason?.data.cast.map((c) => memberById.get(c.id)!) ?? d.members;
 const recent = d.episodes.filter((e) => e.data.status === 'done').slice(-4).reverse();
 const posts = d.posts.slice(0, 4);
 const authorOf = (p: (typeof posts)[number]) => memberById.get(p.data.author.id)!;
@@ -27,8 +27,10 @@ const countdown = d.upcoming.map((e) => ({
       <div class="marquee">
         <div class="marquee-in">
           <div class="hero-top">
-            <p class="eyebrow">Live from your terminal · {currentSeason?.data.number}기 「{currentSeason?.data.title}」</p>
-            <span class="rec"><i></i>REC · {currentSeason?.data.place}</span>
+            <p class="eyebrow">
+              Live from your terminal{currentSeason ? ` · ${currentSeason.data.number}기 「${currentSeason.data.title}」` : ''}
+            </p>
+            <span class="rec"><i></i>REC{currentSeason && ` · ${currentSeason.data.place}`}</span>
           </div>
           <BulbSign />
           <div class="hero-foot">
@@ -84,15 +86,23 @@ const countdown = d.upcoming.map((e) => ({
     <div class="wrap">
       <div class="section-head">
         <div>
-          <p class="eyebrow">{currentSeason?.data.number}기 출연진</p>
-          <h2>{currentSeason?.data.title}</h2>
+          <p class="eyebrow">{currentSeason ? `${currentSeason.data.number}기 출연진` : 'Cast'}</p>
+          <h2>{currentSeason?.data.title ?? '출연진'}</h2>
         </div>
         <a class="more" href="/cast">전체 출연진 →</a>
       </div>
     </div>
-    <div class="cast-rail">
-      {cast.map((m) => <ProfileCard member={m} cohorts={cohortsOf(m.id)} />)}
-    </div>
+    {
+      cast.length ? (
+        <div class="cast-rail">
+          {cast.map((m) => <ProfileCard member={m} cohorts={cohortsOf(m.id)} />)}
+        </div>
+      ) : (
+        <p class="wrap empty">
+          아직 출연진이 없어요. 초대 코드를 받았다면 <a href="/join">출연 신청</a>부터!
+        </p>
+      )
+    }
   </section>
 
   <section class="wrap">
@@ -393,5 +403,8 @@ const countdown = d.upcoming.map((e) => ({
   }
   .rows {
     border-top: 1px solid var(--line);
+  }
+  .empty {
+    color: var(--ink-2);
   }
 </style>

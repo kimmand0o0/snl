@@ -1,12 +1,34 @@
 ---
 import Base from '../../layouts/Base.astro';
-import { loadAll, customCardOf } from '../../lib/data';
+import { loadAll } from '../../lib/data';
 import { CARD_STARTER, CARD_HEIGHT, CARD_WIDTH } from '../../lib/card';
+import { back, explain } from '../../lib/forms';
+import terminal from '../../lib/card-templates/terminal.html?raw';
+import synthwave from '../../lib/card-templates/synthwave.html?raw';
+import holo from '../../lib/card-templates/holo.html?raw';
 
-const d = await loadAll();
+const me = Astro.locals.me;
+const db = Astro.locals.supabase;
+
+// 내 카드 저장/내리기
+if (Astro.request.method === 'POST') {
+  if (!me) return back(Astro.url, '로그인하고 출연진으로 등록해야 저장할 수 있어요.');
+  const fd = await Astro.request.formData();
+  const html = fd.get('action') === 'remove' ? null : String(fd.get('card_html') ?? '').trim() || null;
+  if (html && html.length > 100_000) return back(Astro.url, '카드 코드가 너무 길어요 (최대 10만 자).');
+  const { error } = await db.from('members').update({ card_html: html }).eq('id', me.id);
+  return back(Astro.url, error ? explain(error) : html ? '카드를 저장했어요. 출연진 페이지에 바로 보여요!' : '커스텀 카드를 내렸어요.');
+}
+
+const d = await loadAll(db);
+const SAMPLE = {
+  id: 'sample',
+  card: null,
+  vars: { name: '김스엔', handle: 'snl', role: 'Backend', tagline: '오늘 밤도 라이브', avatar: '', accent: '#ffc531', github: '', stack: 'TypeScript,Postgres', cohorts: '1' },
+};
 const members = d.members.map((m) => ({
   id: m.id,
-  card: customCardOf(m.id) ?? null,
+  card: m.card,
   vars: {
     name: m.data.name,
     handle: m.data.handle,
@@ -19,6 +41,10 @@ const members = d.members.map((m) => ({
     cohorts: d.cohortsOf(m.id).join(','),
   },
 }));
+const mine = me ? members.find((m) => m.id === me.slug) : undefined;
+// 내 카드가 맨 앞. 출연진이 아무도 없으면 예시 데이터로 미리보기
+const previews = mine ? [mine, ...members.filter((m) => m !== mine)] : members.length ? members : [SAMPLE];
+const templates = { 기본: CARD_STARTER, 터미널: terminal, 신스웨이브: synthwave, 홀로그램: holo };
 ---
 
 <Base title="카드 꾸미기" description="HTML로 나만의 출연진 카드를 만들어보세요">
@@ -26,22 +52,28 @@ const members = d.members.map((m) => ({
     <p class="eyebrow">Card playground</p>
     <h1 class="display big">카드 꾸미기</h1>
     <p class="lede">
-      {CARD_WIDTH}×{CARD_HEIGHT} 무대 위에서 HTML·CSS·JS 아무거나. 다 만들면
-      <code>src/content/cards/&lt;내-id&gt;.html</code> 로 PR 올리면 끝.
+      {CARD_WIDTH}×{CARD_HEIGHT} 무대 위에서 HTML·CSS·JS 아무거나.
+      {me ? '다 만들면 저장 버튼 한 번이면 끝.' : <>저장하려면 <a href="/login?next=/cast/playground">로그인</a>하세요.</>}
     </p>
   </section>
 
-  <section class="wrap pg" data-members={JSON.stringify(members)} data-starter={CARD_STARTER}>
+  <section class="wrap pg" data-members={JSON.stringify(previews)} data-templates={JSON.stringify(templates)} data-mine={mine?.id ?? ''}>
     <div class="editor">
       <div class="tools">
         <label>
           미리보기 데이터
           <select data-member>
-            {members.map((m) => <option value={m.id}>{m.vars.name} ({m.id})</option>)}
+            {previews.map((m) => <option value={m.id}>{m.vars.name}{m === mine ? ' (나)' : ''}</option>)}
+          </select>
+        </label>
+        <label>
+          템플릿
+          <select data-template>
+            <option value="">고르기…</option>
+            {Object.keys(templates).map((k) => <option value={k}>{k}</option>)}
           </select>
         </label>
         <button type="button" class="btn" data-load>이 멤버 카드 불러오기</button>
-        <button type="button" class="btn" data-reset>템플릿으로 초기화</button>
       </div>
       <textarea data-code spellcheck="false" aria-label="카드 HTML 코드"></textarea>
       <p class="vars">
@@ -60,10 +92,26 @@ const members = d.members.map((m) => ({
           title="카드 미리보기"></iframe>
       </div>
       <div class="actions">
-        <button type="button" class="btn primary" data-download>.html 내려받기</button>
+        {
+          me && (
+            <form method="post" data-save>
+              <input type="hidden" name="card_html" />
+              <button class="btn primary">내 카드로 저장</button>
+            </form>
+          )
+        }
+        {
+          mine?.card && (
+            <form method="post">
+              <input type="hidden" name="action" value="remove" />
+              <button class="btn danger" data-confirm="커스텀 카드를 내리고 기본 카드로 돌아갈까요?">카드 내리기</button>
+            </form>
+          )
+        }
+        <button type="button" class="btn" data-download>.html 내려받기</button>
         <button type="button" class="btn" data-copy>코드 복사</button>
       </div>
-      <p class="note">작성 중인 코드는 이 브라우저에 자동 저장돼요.</p>
+      <p class="note">작성 중인 코드는 이 브라우저에도 임시 저장돼요.</p>
     </div>
   </section>
 </Base>
@@ -74,7 +122,9 @@ const members = d.members.map((m) => ({
   type M = { id: string; card: string | null; vars: Record<string, string> };
   const root = document.querySelector<HTMLElement>('.pg')!;
   const members: M[] = JSON.parse(root.dataset.members!);
-  const starter = root.dataset.starter!;
+  const templates: Record<string, string> = JSON.parse(root.dataset.templates!);
+  const starter = templates['기본'];
+  const mineId = root.dataset.mine;
   const code = root.querySelector<HTMLTextAreaElement>('[data-code]')!;
   const select = root.querySelector<HTMLSelectElement>('[data-member]')!;
   const frame = root.querySelector<HTMLIFrameElement>('[data-preview]')!;
@@ -107,7 +157,10 @@ const members = d.members.map((m) => ({
 
   const wanted = new URLSearchParams(location.search).get('member');
   if (wanted && members.some((m) => m.id === wanted)) select.value = wanted;
-  code.value = store.get() ?? current().card ?? starter;
+  const saved = members.find((m) => m.id === mineId)?.card;
+  // 방금 저장했으면 저장본, 아니면 작성 중이던 초안 → 내 저장본 → 기본 템플릿
+  const justSaved = new URLSearchParams(location.search).has('msg');
+  code.value = (justSaved && saved) || store.get() || saved || starter;
   update();
 
   code.addEventListener('input', update);
@@ -124,10 +177,26 @@ const members = d.members.map((m) => ({
     code.value = current().card ?? starter;
     update();
   });
-  root.querySelector('[data-reset]')!.addEventListener('click', () => {
-    code.value = starter;
+  const tpl = root.querySelector<HTMLSelectElement>('[data-template]')!;
+  tpl.addEventListener('change', () => {
+    if (!tpl.value) return;
+    if (code.value.trim() && code.value !== starter && !confirm('지금 코드를 템플릿으로 바꿀까요?')) {
+      tpl.value = '';
+      return;
+    }
+    code.value = templates[tpl.value];
+    tpl.value = '';
     update();
   });
+  root.querySelector<HTMLFormElement>('[data-save]')?.addEventListener('submit', (ev) => {
+    const f = ev.currentTarget as HTMLFormElement;
+    f.querySelector<HTMLInputElement>('[name=card_html]')!.value = code.value;
+  });
+  root.querySelectorAll<HTMLButtonElement>('[data-confirm]').forEach((b) =>
+    b.addEventListener('click', (ev) => {
+      if (!confirm(b.dataset.confirm)) ev.preventDefault();
+    }),
+  );
   root.querySelector('[data-download]')!.addEventListener('click', () => {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([code.value], { type: 'text/html' }));
@@ -244,6 +313,7 @@ const members = d.members.map((m) => ({
     gap: 8px;
     margin-top: 14px;
     justify-content: center;
+    flex-wrap: wrap;
   }
   .note {
     text-align: center;
