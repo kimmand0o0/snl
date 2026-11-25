@@ -2,7 +2,7 @@
 
 매주 밤, 한 명씩 돌아가며 발표하는 개발 스터디 SNL의 사이트입니다. https://snl-zeta.vercel.app
 
-- **출연진**: 구글·GitHub로 로그인 → 초대 코드 입력 → 프로필·커스텀 카드를 직접 꾸밉니다.
+- **출연진**: GitHub로 로그인 → 초대 코드 입력 → 프로필·커스텀 카드를 직접 꾸밉니다.
 - **편성표**: 관리자가 기수를 만들고 출연 순서를 정하면 발표 날짜가 자동으로 배정됩니다. 캘린더 구독(.ics) 지원.
 - **다시보기**: 발표자가 회차 페이지에서 링크를 붙이거나 파일(PDF 등, 50MB까지)을 올립니다. 구글 슬라이드·유튜브·피그마·PDF는 페이지 안에서 바로 보여요.
 - **블로그**: 출연진이 사이트에서 마크다운으로 글을 씁니다.
@@ -21,7 +21,7 @@
 ## 구조
 
 - Astro(SSR) + `@astrojs/vercel`, 서울 리전(icn1)
-- Supabase: Auth(Google/GitHub), Postgres, Storage(`materials` 버킷)
+- Supabase: Auth(GitHub), Postgres, Storage(`materials` 버킷)
 - 커스텀 카드는 `allow-same-origin` 없는 sandbox iframe에서 실행돼 사이트 쿠키·DOM에 접근할 수 없습니다.
 - 사용자가 쓴 마크다운은 `sanitize-html`로 정리한 뒤 렌더링합니다.
 
