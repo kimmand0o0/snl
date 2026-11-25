@@ -1,0 +1,102 @@
+---
+import { formatDate, initials, type Member, type Post } from '../lib/data';
+
+interface Props {
+  posts: Post[];
+  authorOf: (p: Post) => Member;
+}
+const { posts, authorOf } = Astro.props;
+---
+
+<ul class="posts">
+  {
+    posts.map((p) => {
+      const a = authorOf(p);
+      return (
+        <li>
+          <a href={`/blog/${p.id}`} class="post" style={`--accent:${a.data.accent}`}>
+            <span class="meta">
+              <span class="av">{initials(a.data.name)}</span>
+              {a.data.name} · {formatDate(p.data.date, false)}
+              {p.data.draft && <span class="chip">draft</span>}
+            </span>
+            <span class="title">{p.data.title}</span>
+            {p.data.description && <span class="desc">{p.data.description}</span>}
+            {p.data.tags.length > 0 && (
+              <span class="tags">
+                {p.data.tags.map((t) => (
+                  <span>#{t}</span>
+                ))}
+              </span>
+            )}
+          </a>
+        </li>
+      );
+    })
+  }
+</ul>
+
+<style>
+  .posts {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+    gap: 16px;
+  }
+  .post {
+    --accent: var(--bulb);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    height: 100%;
+    padding: 22px;
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    background: var(--stage-2);
+    text-decoration: none;
+    transition:
+      border-color 0.2s,
+      transform 0.2s;
+  }
+  .post:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+  .av {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--cue-ink);
+    font-size: 9px;
+    font-weight: 800;
+  }
+  .title {
+    font-size: 20px;
+    font-weight: 800;
+    line-height: 1.35;
+  }
+  .desc {
+    color: var(--ink-2);
+    font-size: 15px;
+  }
+  .tags {
+    margin-top: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font: 12px var(--font-mono);
+    color: var(--accent);
+  }
+</style>

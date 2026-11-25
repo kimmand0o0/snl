@@ -1,0 +1,154 @@
+---
+import Base from '../layouts/Base.astro';
+import Calendar from '../components/Calendar.astro';
+import EpisodeRow from '../components/EpisodeRow.astro';
+import { loadAll, formatDate, initials } from '../lib/data';
+
+const d = await loadAll();
+const { seasons, episodes, seasonOf, presenterOf, timeOf, memberById, next } = d;
+const lineups = [...seasons].reverse().map((s) => ({
+  season: s,
+  cast: s.data.cast.map((c) => memberById.get(c.id)!),
+  eps: episodes.filter((e) => e.data.season.id === s.id),
+}));
+const site = Astro.site ?? new URL(Astro.url.origin);
+const webcal = new URL('/calendar.ics', site).href.replace(/^https?:/, 'webcal:');
+---
+
+<Base title="편성표" description="기수별 발표 순서와 날짜">
+  <section class="wrap head">
+    <p class="eyebrow">Broadcast schedule</p>
+    <h1 class="display big">편성표</h1>
+    <div class="sub">
+      <a class="btn primary" href={webcal}>📅 캘린더 구독</a>
+      <a class="btn" href="/calendar.ics" download>.ics 내려받기</a>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <Calendar />
+  </section>
+
+  {
+    lineups.map(({ season, cast, eps }) => (
+      <section class="wrap section" id={season.id}>
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">
+              {season.data.number}기 · {formatDate(season.data.start, false)}
+              {season.data.end && ` – ${formatDate(season.data.end, false)}`} · 매회 {season.data.time} · {season.data.place}
+            </p>
+            <h2>{season.data.title}</h2>
+            {season.data.theme && <p class="theme">{season.data.theme}</p>}
+          </div>
+        </div>
+
+        <ol class="rotation" aria-label="발표 로테이션 순서">
+          {cast.map((m, i) => {
+            const mine = eps.filter((e) => e.data.presenter.id === m.id);
+            return (
+              <li style={`--accent:${m.data.accent}`}>
+                <span class="order">{String(i + 1).padStart(2, '0')}</span>
+                <a href={`/cast/${m.id}`} class="who">
+                  <span class="av">{initials(m.data.name)}</span>
+                  {m.data.name}
+                </a>
+                <span class="cnt">{mine.length}회</span>
+              </li>
+            );
+          })}
+        </ol>
+
+        <div class="rows">
+          {eps.map((e) => (
+            <EpisodeRow
+              episode={e}
+              season={seasonOf(e)}
+              presenter={presenterOf(e)}
+              time={timeOf(e)}
+              isNext={e.id === next?.id}
+            />
+          ))}
+        </div>
+      </section>
+    ))
+  }
+</Base>
+
+<style>
+  .head {
+    padding-top: clamp(32px, 6vw, 64px);
+    padding-bottom: 28px;
+  }
+  .big {
+    font-family: var(--font-ko-display);
+    font-size: clamp(48px, 9vw, 96px);
+    margin: 8px 0 20px;
+  }
+  .sub {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .theme {
+    margin: 6px 0 0;
+    color: var(--ink-2);
+  }
+  .rotation {
+    list-style: none;
+    margin: 0 0 24px;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .rotation li {
+    --accent: var(--bulb);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 14px 6px 8px;
+    border-radius: 99px;
+    border: 1px solid var(--line);
+    background: var(--stage-2);
+  }
+  .rotation li + li::before {
+    content: '→';
+    margin-left: -26px;
+    margin-right: 4px;
+    color: var(--ink-3);
+    font-size: 12px;
+  }
+  .rotation li + li {
+    margin-left: 14px;
+  }
+  .order {
+    font: 700 11px var(--font-mono);
+    color: var(--ink-3);
+  }
+  .who {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .av {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--cue-ink);
+    font-size: 10px;
+    font-weight: 800;
+  }
+  .cnt {
+    font: 12px var(--font-mono);
+    color: var(--ink-2);
+  }
+  .rows {
+    border-top: 1px solid var(--line);
+  }
+</style>

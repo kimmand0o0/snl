@@ -1,0 +1,178 @@
+---
+/**
+ * 커스텀 카드(src/content/cards/<id>.html)가 있으면 앞면은 sandbox iframe, 뒷면은 기본 카드.
+ * FLIP 버튼으로 3D 회전하며 뒤집습니다. 커스텀 카드가 없으면 기본 카드만.
+ * iframe 은 allow-same-origin 이 없어서 사이트 쿠키·DOM 에 접근할 수 없습니다.
+ */
+import DefaultCard from './DefaultCard.astro';
+import { customCardOf, type Member } from '../lib/data';
+import { buildCardDoc, CARD_HEIGHT, CARD_WIDTH } from '../lib/card';
+
+interface Props {
+  member: Member;
+  cohorts: number[];
+  variant?: 'auto' | 'default';
+  link?: boolean;
+}
+const { member, cohorts, variant = 'auto', link = true } = Astro.props;
+const m = member.data;
+const custom = variant === 'auto' ? customCardOf(member.id) : undefined;
+const doc =
+  custom &&
+  buildCardDoc(custom, {
+    name: m.name,
+    handle: m.handle,
+    role: m.role,
+    tagline: m.tagline,
+    avatar: m.avatar,
+    accent: m.accent,
+    github: m.github,
+    stack: m.stack.join(','),
+    cohorts: cohorts.join(','),
+  });
+---
+
+{
+  doc ? (
+    <div class="flip" style={`--accent:${m.accent}`} data-flip>
+      <button type="button" class="flip-btn" aria-pressed="false" aria-label={`${m.name} 카드 뒤집기`}>
+        FLIP ↻
+      </button>
+      <div class="flip-in">
+        <div class="face front">
+          <iframe
+            srcdoc={doc}
+            sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+            width={CARD_WIDTH}
+            height={CARD_HEIGHT}
+            title={`${m.name}의 커스텀 프로필 카드`}
+          />
+          {link && (
+            <a class="hit" href={`/cast/${member.id}`}>
+              <span class="sr-only">{m.name} 프로필 보기</span>
+            </a>
+          )}
+        </div>
+        <div class="face back" hidden>
+          <DefaultCard member={member} cohorts={cohorts} link={link} />
+        </div>
+      </div>
+    </div>
+  ) : (
+    <DefaultCard member={member} cohorts={cohorts} link={link} />
+  )
+}
+
+<script>
+  // iframe 은 preserve-3d/backface-visibility 안에서 렌더링이 깨지는 브라우저가 있어서
+  // 90도까지 돌리고 → 앞/뒷면 교체 → 다시 돌아오는 2단계로 뒤집습니다.
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll<HTMLElement>('[data-flip]').forEach((card) => {
+    const btn = card.querySelector<HTMLButtonElement>('.flip-btn')!;
+    const inner = card.querySelector<HTMLElement>('.flip-in')!;
+    const [front, back] = card.querySelectorAll<HTMLElement>('.face');
+    let busy = false;
+    const swap = () => {
+      const on = card.classList.toggle('flipped');
+      front.hidden = on;
+      back.hidden = !on;
+      btn.setAttribute('aria-pressed', String(on));
+    };
+    btn.addEventListener('click', () => {
+      if (reduce) return swap();
+      if (busy) return;
+      busy = true;
+      inner.classList.add('turn-out');
+      inner.addEventListener(
+        'transitionend',
+        () => {
+          swap();
+          inner.classList.remove('turn-out');
+          inner.classList.add('turn-in');
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              inner.classList.remove('turn-in');
+              busy = false;
+            }),
+          );
+        },
+        { once: true },
+      );
+    });
+  });
+</script>
+
+<style>
+  .flip {
+    position: relative;
+    width: 320px;
+    height: 460px;
+    max-width: 100%;
+    perspective: 1400px;
+  }
+  .flip-in {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transition: transform 0.22s cubic-bezier(0.4, 0, 1, 1);
+  }
+  .flip-in.turn-out {
+    transform: rotateY(90deg) scale(0.96);
+  }
+  /* 반대편에서 시작해 제자리로 */
+  .flip-in.turn-in {
+    transform: rotateY(-90deg) scale(0.96);
+    transition: none;
+  }
+  .flip-in:not(.turn-out):not(.turn-in) {
+    transition-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  }
+  .face {
+    position: absolute;
+    inset: 0;
+    border-radius: 18px;
+    overflow: hidden;
+  }
+  iframe {
+    display: block;
+    border: 0;
+    background: transparent;
+  }
+  /* 그리드에서는 카드 아래쪽이 프로필 링크. 위쪽은 카드 안 인터랙션용으로 남겨둠 */
+  .hit {
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 40%;
+  }
+  .flip-btn {
+    position: absolute;
+    z-index: 3;
+    top: 12px;
+    right: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 99px;
+    border: 1px solid #ffffff30;
+    background: #000000a0;
+    color: #fff;
+    font: 700 10px var(--font-mono);
+    letter-spacing: 0.12em;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition: background 0.15s;
+  }
+  .flip-btn::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--bulb);
+    box-shadow: 0 0 8px var(--bulb);
+  }
+  .flip-btn:hover {
+    background: #000000d0;
+  }
+</style>

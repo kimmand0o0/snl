@@ -1,0 +1,110 @@
+---
+import { formatDate, initials, slate, type Episode, type Member, type Season } from '../lib/data';
+
+interface Props {
+  episode: Episode;
+  season: Season;
+  presenter: Member;
+  time: string;
+  isNext?: boolean;
+}
+const { episode: e, season, presenter: p, time, isNext } = Astro.props;
+const count = e.data.materials.length;
+---
+
+<a href={`/episodes/${e.id}`} class:list={['row', e.data.status, { next: isNext }]} style={`--accent:${p.data.accent}`}>
+  <span class:list={['slate', { muted: e.data.status !== 'scheduled' }]}>{slate(season.data.number, e.data.number)}</span>
+  <span class="date">{formatDate(e.data.date)} {time}</span>
+  <span class="who"><span class="av">{initials(p.data.name)}</span>{p.data.name}</span>
+  <span class="title">{e.data.title}</span>
+  <span class="tail">
+    {isNext && <span class="badge">NEXT</span>}
+    {e.data.status === 'skipped' && <span class="chip">휴방</span>}
+    {count > 0 && <span class="chip">자료 {count}</span>}
+  </span>
+</a>
+
+<style>
+  .row {
+    --accent: var(--bulb);
+    display: grid;
+    grid-template-columns: auto 150px 110px 1fr auto;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    text-decoration: none;
+    transition: background 0.15s;
+  }
+  .row:hover {
+    background: var(--stage-2);
+  }
+  .row.next {
+    background: color-mix(in oklab, var(--bulb) 8%, transparent);
+  }
+  .row.skipped .title {
+    text-decoration: line-through;
+    color: var(--ink-3);
+  }
+  .date {
+    font: 13px var(--font-mono);
+    color: var(--ink-2);
+  }
+  .who {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .av {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--cue-ink);
+    font-size: 10px;
+    font-weight: 800;
+    flex: none;
+  }
+  .title {
+    font-weight: 700;
+    min-width: 0;
+  }
+  .tail {
+    display: flex;
+    gap: 6px;
+  }
+  .badge {
+    font: 700 11px var(--font-mono);
+    letter-spacing: 0.1em;
+    padding: 2px 8px;
+    border-radius: 5px;
+    background: var(--onair);
+    color: #fff;
+  }
+  @media (max-width: 760px) {
+    .row {
+      grid-template-columns: auto 1fr auto;
+      row-gap: 6px;
+    }
+    .date {
+      grid-column: 2;
+    }
+    .who {
+      grid-column: 3;
+      justify-self: end;
+    }
+    .title {
+      grid-column: 1 / -1;
+    }
+    .tail {
+      grid-column: 1 / -1;
+    }
+    .tail:empty {
+      display: none;
+    }
+  }
+</style>

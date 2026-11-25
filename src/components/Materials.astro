@@ -1,0 +1,155 @@
+---
+import { normalizeMaterial, TYPE_META, type MaterialInput } from '../lib/materials';
+
+interface Props {
+  items: MaterialInput[];
+  /** 첫 번째 임베드 가능한 자료를 크게 펼쳐 보여줄지 */
+  stage?: boolean;
+}
+const { items, stage = false } = Astro.props;
+const list = items.map(normalizeMaterial);
+const main = stage ? list.find((m) => m.embedUrl || m.type === 'image') : undefined;
+---
+
+{
+  main && (
+    <div class="stage">
+      {main.type === 'image' ? (
+        <img src={main.url} alt={main.label} />
+      ) : (
+        <iframe src={main.embedUrl} title={main.label} allowfullscreen loading="lazy" />
+      )}
+    </div>
+  )
+}
+
+{
+  list.length === 0 ? (
+    <p class="empty">아직 올라온 자료가 없어요. 에피소드 파일의 <code>materials</code>에 링크를 추가하세요.</p>
+  ) : (
+    <ul class="mats">
+      {list.map((m) => (
+        <li class:list={['mat', m.type]}>
+          <a href={m.url} target={m.url.startsWith('/') ? undefined : '_blank'} rel="noopener" class="row">
+            <span class="ico" aria-hidden="true">{TYPE_META[m.type].icon}</span>
+            <span class="txt">
+              <span class="lbl">{m.label}</span>
+              <span class="host">
+                {TYPE_META[m.type].label} · {m.host}
+              </span>
+            </span>
+            <span class="go" aria-hidden="true">↗</span>
+          </a>
+          {m.embedUrl && m !== main && (
+            <details class="peek">
+              <summary>여기서 보기</summary>
+              <iframe data-src={m.embedUrl} title={m.label} allowfullscreen />
+            </details>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+<script>
+  // 펼칠 때만 iframe 을 로드
+  document.querySelectorAll<HTMLDetailsElement>('details.peek').forEach((d) =>
+    d.addEventListener('toggle', () => {
+      const f = d.querySelector<HTMLIFrameElement>('iframe[data-src]');
+      if (d.open && f && !f.src) f.src = f.dataset.src!;
+    }),
+  );
+</script>
+
+<style>
+  .stage {
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: #000;
+    border: 1px solid var(--line);
+    margin-bottom: 20px;
+    box-shadow: 0 30px 80px -30px #ffc53133;
+  }
+  .stage iframe,
+  .stage img {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    object-fit: contain;
+  }
+  .mats {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 10px;
+  }
+  .mat {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--stage-2);
+    overflow: hidden;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    text-decoration: none;
+  }
+  .row:hover .go {
+    color: var(--bulb);
+    transform: translate(2px, -2px);
+  }
+  .ico {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+    background: var(--stage-3);
+    color: var(--bulb);
+    font-size: 18px;
+    flex: none;
+  }
+  .txt {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+  .lbl {
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .host {
+    font: 12px var(--font-mono);
+    color: var(--ink-3);
+  }
+  .go {
+    color: var(--ink-3);
+    transition: transform 0.15s;
+  }
+  .peek summary {
+    cursor: pointer;
+    padding: 8px 16px;
+    font-size: 13px;
+    color: var(--ink-2);
+    border-top: 1px dashed var(--line);
+  }
+  .peek iframe {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border: 0;
+    display: block;
+    background: #000;
+  }
+  .empty {
+    color: var(--ink-3);
+    font-size: 14px;
+  }
+</style>

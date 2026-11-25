@@ -1,0 +1,40 @@
+---
+import Base from '../../layouts/Base.astro';
+import PostList from '../../components/PostList.astro';
+import { loadAll } from '../../lib/data';
+
+const d = await loadAll();
+const authorOf = (p: (typeof d.posts)[number]) => d.memberById.get(p.data.author.id)!;
+const tags = [...new Set(d.posts.flatMap((p) => p.data.tags))].sort();
+---
+
+<Base title="블로그" description="SNL 출연진의 백스테이지 노트">
+  <section class="wrap head">
+    <p class="eyebrow">Backstage notes</p>
+    <h1 class="display big">블로그</h1>
+    <p class="tags">
+      {tags.map((t) => <span class="chip">#{t}</span>)}
+    </p>
+  </section>
+  <section class="wrap">
+    <PostList posts={d.posts} authorOf={authorOf} />
+  </section>
+</Base>
+
+<style>
+  .head {
+    padding-top: clamp(32px, 6vw, 64px);
+    padding-bottom: 32px;
+  }
+  .big {
+    font-family: var(--font-ko-display);
+    font-size: clamp(48px, 9vw, 96px);
+    margin: 8px 0 16px;
+  }
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+  }
+</style>

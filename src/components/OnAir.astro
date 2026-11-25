@@ -1,0 +1,135 @@
+---
+/**
+ * 헤더의 방송 표시등. 빌드 시점이 아니라 방문 시점 기준으로 계산합니다.
+ * - 발표 시작 ~ 2시간: ON AIR (빨간 불)
+ * - 발표 당일: TONIGHT 20:00
+ * - 그 외: NEXT D-n
+ */
+import { loadAll, ymd, slate } from '../lib/data';
+
+const { episodes, seasonOf, presenterOf, timeOf } = await loadAll();
+const schedule = episodes
+  .filter((e) => e.data.status === 'scheduled')
+  .map((e) => ({
+    d: ymd(e.data.date),
+    t: timeOf(e),
+    s: slate(seasonOf(e).data.number, e.data.number),
+    who: presenterOf(e).data.name,
+    href: `/episodes/${e.id}`,
+  }));
+---
+
+<a class="onair" href="/schedule" data-schedule={JSON.stringify(schedule)} data-state="off">
+  <span class="lamp" aria-hidden="true"></span>
+  <span class="label">OFF AIR</span>
+  <span class="detail"></span>
+</a>
+
+<script>
+  const HOUR = 3600_000;
+  // "2026-11-26" + "20:00" (KST) → epoch ms
+  const kst = (d: string, t: string) => Date.parse(`${d}T${t}:00+09:00`);
+
+  for (const el of document.querySelectorAll<HTMLAnchorElement>('.onair')) {
+    const list: { d: string; t: string; s: string; who: string; href: string }[] = JSON.parse(
+      el.dataset.schedule ?? '[]',
+    );
+    const label = el.querySelector('.label')!;
+    const detail = el.querySelector('.detail')!;
+
+    const render = () => {
+      const now = Date.now();
+      const next = list.find((e) => kst(e.d, e.t) + 2 * HOUR > now);
+      if (!next) {
+        el.dataset.state = 'off';
+        label.textContent = 'OFF AIR';
+        detail.textContent = '시즌 휴방';
+        document.body.classList.remove('is-live');
+        return;
+      }
+      const start = kst(next.d, next.t);
+      const todayKst = new Date(now + 9 * HOUR).toISOString().slice(0, 10);
+      el.href = next.href;
+      document.body.classList.toggle('is-live', now >= start);
+      if (now >= start) {
+        el.dataset.state = 'live';
+        label.textContent = 'ON AIR';
+        detail.textContent = `${next.s} · ${next.who}`;
+      } else if (next.d === todayKst) {
+        el.dataset.state = 'tonight';
+        label.textContent = 'TONIGHT';
+        const mins = Math.ceil((start - now) / 60_000);
+        detail.textContent = mins <= 90 ? `${mins}분 후 · ${next.who}` : `${next.t} · ${next.who}`;
+      } else {
+        const days = Math.round((Date.parse(next.d) - Date.parse(todayKst)) / (24 * HOUR));
+        el.dataset.state = 'off';
+        label.textContent = `D-${days}`;
+        detail.textContent = `${next.s} · ${next.who}`;
+      }
+    };
+    render();
+    setInterval(render, 30_000);
+  }
+</script>
+
+<style>
+  .onair {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 14px 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: #0a0a0d;
+    text-decoration: none;
+    font-family: var(--font-mono);
+    white-space: nowrap;
+  }
+  .lamp {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #3a2422;
+    box-shadow: inset 0 0 2px #000;
+  }
+  .label {
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    color: var(--ink-3);
+  }
+  .detail {
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+  .onair[data-state='tonight'] .lamp {
+    background: var(--bulb);
+    box-shadow: 0 0 10px var(--bulb);
+  }
+  .onair[data-state='tonight'] .label {
+    color: var(--bulb);
+  }
+  .onair[data-state='live'] {
+    border-color: var(--onair);
+    background: #2a0b08;
+  }
+  .onair[data-state='live'] .lamp {
+    background: var(--onair);
+    box-shadow: 0 0 14px var(--onair);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .onair[data-state='live'] .label {
+    color: #fff;
+    text-shadow: 0 0 12px var(--onair);
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.45;
+    }
+  }
+  @media (max-width: 480px) {
+    .detail {
+      display: none;
+    }
+  }
+</style>

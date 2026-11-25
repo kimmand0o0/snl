@@ -1,0 +1,159 @@
+---
+import { render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import ProfileCard from '../../components/ProfileCard.astro';
+import EpisodeRow from '../../components/EpisodeRow.astro';
+import PostList from '../../components/PostList.astro';
+import { loadAll, customCardOf } from '../../lib/data';
+
+export async function getStaticPaths() {
+  const { members } = await loadAll();
+  return members.map((m) => ({ params: { id: m.id }, props: { id: m.id } }));
+}
+
+const d = await loadAll();
+const m = d.memberById.get(Astro.props.id)!;
+const cohorts = d.cohortsOf(m.id);
+const hasCustom = Boolean(customCardOf(m.id));
+const eps = d.episodes.filter((e) => e.data.presenter.id === m.id).reverse();
+const posts = d.posts.filter((p) => p.data.author.id === m.id);
+const authorOf = () => m;
+const { Content } = await render(m);
+const links = [
+  ...(m.data.github ? [{ label: 'GitHub', url: `https://github.com/${m.data.github}` }] : []),
+  ...(m.data.blog ? [{ label: 'Blog', url: m.data.blog }] : []),
+  ...m.data.links,
+];
+---
+
+<Base title={m.data.name} description={m.data.tagline ?? m.data.role}>
+  <section class="wrap profile" style={`--accent:${m.data.accent}`}>
+    <div class="card-col">
+      <ProfileCard member={m} cohorts={cohorts} link={false} />
+      {
+        !hasCustom && (
+          <a class="hint" href={`/cast/playground?member=${m.id}`}>
+            ✦ 아직 커스텀 카드가 없어요 — 꾸미러 가기
+          </a>
+        )
+      }
+    </div>
+
+    <div class="info">
+      <p class="eyebrow">{cohorts.map((c) => `${c}기`).join(' · ')} 출연</p>
+      <h1 class="name">{m.data.name}</h1>
+      <p class="role">@{m.data.handle} · {m.data.role}</p>
+      {m.data.tagline && <p class="tagline">“{m.data.tagline}”</p>}
+      {
+        links.length > 0 && (
+          <p class="links">
+            {links.map((l) => (
+              <a href={l.url} target="_blank" rel="noopener" class="btn">
+                {l.label} ↗
+              </a>
+            ))}
+          </p>
+        )
+      }
+      <div class="prose bio"><Content /></div>
+      {
+        m.data.stack.length > 0 && (
+          <p class="stack">
+            {m.data.stack.map((s) => (
+              <span class="chip">{s}</span>
+            ))}
+          </p>
+        )
+      }
+    </div>
+  </section>
+
+  <section class="wrap section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Appearances</p>
+        <h2>호스트한 회차 {eps.length}</h2>
+      </div>
+    </div>
+    <div class="rows">
+      {
+        eps.map((e) => (
+          <EpisodeRow episode={e} season={d.seasonOf(e)} presenter={m} time={d.timeOf(e)} isNext={e.id === d.next?.id} />
+        ))
+      }
+    </div>
+  </section>
+
+  {
+    posts.length > 0 && (
+      <section class="wrap">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Writing</p>
+            <h2>쓴 글</h2>
+          </div>
+        </div>
+        <PostList posts={posts} authorOf={authorOf} />
+      </section>
+    )
+  }
+</Base>
+
+<style>
+  .profile {
+    display: grid;
+    grid-template-columns: 320px minmax(0, 1fr);
+    gap: clamp(32px, 6vw, 72px);
+    padding-top: clamp(32px, 6vw, 64px);
+    align-items: start;
+  }
+  @media (max-width: 820px) {
+    .profile {
+      grid-template-columns: 1fr;
+    }
+    .card-col {
+      justify-self: center;
+    }
+  }
+  .hint {
+    display: block;
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--ink-2);
+    text-align: center;
+  }
+  .name {
+    font-family: var(--font-ko-display);
+    font-weight: 400;
+    font-size: clamp(44px, 7vw, 80px);
+    line-height: 1.05;
+    margin: 10px 0 6px;
+  }
+  .role {
+    margin: 0;
+    color: var(--accent);
+    font: 15px var(--font-mono);
+  }
+  .tagline {
+    font-size: 20px;
+    margin: 20px 0 0;
+  }
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 20px 0 0;
+  }
+  .bio {
+    margin-top: 28px;
+    color: var(--ink-2);
+  }
+  .stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .rows {
+    border-top: 1px solid var(--line);
+  }
+</style>

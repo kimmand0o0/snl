@@ -1,0 +1,253 @@
+---
+import Base from '../../layouts/Base.astro';
+import { loadAll, customCardOf } from '../../lib/data';
+import { CARD_STARTER, CARD_HEIGHT, CARD_WIDTH } from '../../lib/card';
+
+const d = await loadAll();
+const members = d.members.map((m) => ({
+  id: m.id,
+  card: customCardOf(m.id) ?? null,
+  vars: {
+    name: m.data.name,
+    handle: m.data.handle,
+    role: m.data.role,
+    tagline: m.data.tagline ?? '',
+    avatar: m.data.avatar ?? '',
+    accent: m.data.accent,
+    github: m.data.github ?? '',
+    stack: m.data.stack.join(','),
+    cohorts: d.cohortsOf(m.id).join(','),
+  },
+}));
+---
+
+<Base title="카드 꾸미기" description="HTML로 나만의 출연진 카드를 만들어보세요">
+  <section class="wrap head">
+    <p class="eyebrow">Card playground</p>
+    <h1 class="display big">카드 꾸미기</h1>
+    <p class="lede">
+      {CARD_WIDTH}×{CARD_HEIGHT} 무대 위에서 HTML·CSS·JS 아무거나. 다 만들면
+      <code>src/content/cards/&lt;내-id&gt;.html</code> 로 PR 올리면 끝.
+    </p>
+  </section>
+
+  <section class="wrap pg" data-members={JSON.stringify(members)} data-starter={CARD_STARTER}>
+    <div class="editor">
+      <div class="tools">
+        <label>
+          미리보기 데이터
+          <select data-member>
+            {members.map((m) => <option value={m.id}>{m.vars.name} ({m.id})</option>)}
+          </select>
+        </label>
+        <button type="button" class="btn" data-load>이 멤버 카드 불러오기</button>
+        <button type="button" class="btn" data-reset>템플릿으로 초기화</button>
+      </div>
+      <textarea data-code spellcheck="false" aria-label="카드 HTML 코드"></textarea>
+      <p class="vars">
+        치환자: <code>{'{{name}}'}</code> <code>{'{{handle}}'}</code> <code>{'{{role}}'}</code>
+        <code>{'{{tagline}}'}</code> <code>{'{{avatar}}'}</code> <code>{'{{accent}}'}</code>
+        <code>{'{{github}}'}</code> <code>{'{{stack}}'}</code> <code>{'{{cohorts}}'}</code>
+      </p>
+    </div>
+    <div class="preview">
+      <div class="stage-frame">
+        <iframe
+          data-preview
+          sandbox="allow-scripts allow-popups"
+          width={CARD_WIDTH}
+          height={CARD_HEIGHT}
+          title="카드 미리보기"></iframe>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn primary" data-download>.html 내려받기</button>
+        <button type="button" class="btn" data-copy>코드 복사</button>
+      </div>
+      <p class="note">작성 중인 코드는 이 브라우저에 자동 저장돼요.</p>
+    </div>
+  </section>
+</Base>
+
+<script>
+  import { buildCardDoc } from '../../lib/card';
+
+  type M = { id: string; card: string | null; vars: Record<string, string> };
+  const root = document.querySelector<HTMLElement>('.pg')!;
+  const members: M[] = JSON.parse(root.dataset.members!);
+  const starter = root.dataset.starter!;
+  const code = root.querySelector<HTMLTextAreaElement>('[data-code]')!;
+  const select = root.querySelector<HTMLSelectElement>('[data-member]')!;
+  const frame = root.querySelector<HTMLIFrameElement>('[data-preview]')!;
+  const KEY = 'snl-card-draft';
+
+  const store = {
+    get: () => {
+      try {
+        return localStorage.getItem(KEY);
+      } catch {
+        return null;
+      }
+    },
+    set: (v: string) => {
+      try {
+        localStorage.setItem(KEY, v);
+      } catch {}
+    },
+  };
+
+  const current = () => members.find((m) => m.id === select.value) ?? members[0];
+  let t: number | undefined;
+  const update = () => {
+    clearTimeout(t);
+    t = window.setTimeout(() => {
+      frame.srcdoc = buildCardDoc(code.value, current().vars);
+      store.set(code.value);
+    }, 250);
+  };
+
+  const wanted = new URLSearchParams(location.search).get('member');
+  if (wanted && members.some((m) => m.id === wanted)) select.value = wanted;
+  code.value = store.get() ?? current().card ?? starter;
+  update();
+
+  code.addEventListener('input', update);
+  // Tab 키로 들여쓰기
+  code.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    e.preventDefault();
+    const { selectionStart: s, selectionEnd: end } = code;
+    code.setRangeText('  ', s, end, 'end');
+    update();
+  });
+  select.addEventListener('change', update);
+  root.querySelector('[data-load]')!.addEventListener('click', () => {
+    code.value = current().card ?? starter;
+    update();
+  });
+  root.querySelector('[data-reset]')!.addEventListener('click', () => {
+    code.value = starter;
+    update();
+  });
+  root.querySelector('[data-download]')!.addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([code.value], { type: 'text/html' }));
+    a.download = `${current().id}.html`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  const copyBtn = root.querySelector<HTMLButtonElement>('[data-copy]')!;
+  copyBtn.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(code.value);
+    copyBtn.textContent = '복사됨 ✓';
+    setTimeout(() => (copyBtn.textContent = '코드 복사'), 1500);
+  });
+</script>
+
+<style>
+  .head {
+    padding-top: clamp(32px, 6vw, 64px);
+    padding-bottom: 24px;
+  }
+  .big {
+    font-family: var(--font-ko-display);
+    font-size: clamp(48px, 9vw, 96px);
+    margin: 8px 0 12px;
+  }
+  .lede {
+    color: var(--ink-2);
+    margin: 0;
+  }
+  .lede code,
+  .vars code {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    background: var(--stage-3);
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  .pg {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 32px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .pg {
+      grid-template-columns: 1fr;
+    }
+    .preview {
+      order: -1;
+      justify-self: center;
+    }
+  }
+  .tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: end;
+    margin-bottom: 10px;
+  }
+  .tools label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--ink-3);
+    margin-right: auto;
+  }
+  select {
+    padding: 9px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--stage-2);
+    color: var(--ink);
+    font: 14px var(--font-body);
+  }
+  textarea {
+    width: 100%;
+    min-height: 560px;
+    padding: 18px;
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    background: #08080b;
+    color: #e6e1d3;
+    font: 13px/1.65 var(--font-mono);
+    tab-size: 2;
+    resize: vertical;
+  }
+  textarea:focus {
+    outline: none;
+    border-color: var(--bulb);
+  }
+  .vars {
+    font-size: 12px;
+    color: var(--ink-3);
+    line-height: 2;
+  }
+  .stage-frame {
+    padding: 28px;
+    border-radius: 24px;
+    background:
+      radial-gradient(circle at 50% 0%, #ffc53126, transparent 60%),
+      repeating-conic-gradient(#ffffff06 0 25%, transparent 0 50%) 0 0 / 20px 20px,
+      var(--stage-2);
+    border: 1px solid var(--line);
+  }
+  iframe {
+    display: block;
+    border: 0;
+    border-radius: 18px;
+  }
+  .actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+    justify-content: center;
+  }
+  .note {
+    text-align: center;
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+</style>

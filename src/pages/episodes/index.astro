@@ -1,0 +1,255 @@
+---
+import Base from '../../layouts/Base.astro';
+import { loadAll, formatDate, slate } from '../../lib/data';
+import { normalizeMaterial, TYPE_META, type MaterialType } from '../../lib/materials';
+
+const d = await loadAll();
+const { seasons, episodes, presenterOf } = d;
+const withMats = episodes.map((e) => ({ e, mats: e.data.materials.map(normalizeMaterial) }));
+const usedTypes = [...new Set(withMats.flatMap((x) => x.mats.map((m) => m.type)))] as MaterialType[];
+const groups = [...seasons].reverse().map((s) => ({
+  s,
+  items: withMats.filter((x) => x.e.data.season.id === s.id && x.e.data.status !== 'skipped').reverse(),
+}));
+---
+
+<Base title="다시보기" description="지난 발표 자료 아카이브">
+  <section class="wrap head">
+    <p class="eyebrow">Replays & materials</p>
+    <h1 class="display big">다시보기</h1>
+    <p class="lede">슬라이드, 영상, 코드, 노션, PDF… 어떤 형태로 공유했든 한곳에.</p>
+    <div class="filters" role="group" aria-label="자료 종류 필터">
+      <button type="button" class="f" aria-pressed="true" data-type="all">전체</button>
+      {
+        usedTypes.map((t) => (
+          <button type="button" class="f" aria-pressed="false" data-type={t}>
+            {TYPE_META[t].icon} {TYPE_META[t].label}
+          </button>
+        ))
+      }
+    </div>
+  </section>
+
+  {
+    groups.map(({ s, items }) => (
+      <section class="wrap season" data-season>
+        <h2 class="season-title">
+          <span class="display">{s.data.number}기</span> {s.data.title}
+        </h2>
+        <ul class="tapes">
+          {items.map(({ e, mats }) => {
+            const p = presenterOf(e);
+            return (
+              <li data-types={[...new Set(mats.map((m) => m.type))].join(' ')}>
+                <a href={`/episodes/${e.id}`} class:list={['tape', e.data.status]} style={`--accent:${p.data.accent}`}>
+                  <span class="reel">
+                    <span class:list={['slate', { muted: e.data.status !== 'scheduled' }]}>
+                      {slate(s.data.number, e.data.number)}
+                    </span>
+                    <span class="holes" aria-hidden="true">
+                      <i />
+                      <i />
+                    </span>
+                    <span class="date">{formatDate(e.data.date, false)}</span>
+                  </span>
+                  <span class="label">
+                    <span class="t">{e.data.title}</span>
+                    <span class="types">
+                      {e.data.status === 'scheduled' ? (
+                        <span class="soon">방송 예정</span>
+                      ) : mats.length ? (
+                        [...new Set(mats.map((m) => m.type))].map((t) => <span class="ty">{TYPE_META[t].label}</span>)
+                      ) : (
+                        <span class="soon">자료 대기</span>
+                      )}
+                    </span>
+                    <span class="by">
+                      <span>HOST · {p.data.name}</span>
+                      <span>{s.data.number}기</span>
+                    </span>
+                  </span>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    ))
+  }
+</Base>
+
+<script>
+  const buttons = document.querySelectorAll<HTMLButtonElement>('.filters .f');
+  buttons.forEach((b) =>
+    b.addEventListener('click', () => {
+      const t = b.dataset.type!;
+      buttons.forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      document.querySelectorAll<HTMLElement>('.tapes li').forEach((li) => {
+        li.hidden = t !== 'all' && !(li.dataset.types ?? '').split(' ').includes(t);
+      });
+      document.querySelectorAll<HTMLElement>('[data-season]').forEach((sec) => {
+        sec.hidden = !sec.querySelector('li:not([hidden])');
+      });
+    }),
+  );
+</script>
+
+<style>
+  .head {
+    padding-top: clamp(32px, 6vw, 64px);
+  }
+  .big {
+    font-family: var(--font-ko-display);
+    font-size: clamp(48px, 9vw, 96px);
+    margin: 8px 0 12px;
+  }
+  .lede {
+    color: var(--ink-2);
+    margin: 0 0 24px;
+  }
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .f {
+    padding: 6px 14px;
+    border-radius: 99px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink-2);
+    font: 600 14px var(--font-body);
+    cursor: pointer;
+  }
+  .f[aria-pressed='true'] {
+    background: var(--ink);
+    color: var(--cue-ink);
+    border-color: var(--ink);
+  }
+  .season {
+    margin-top: 56px;
+  }
+  .season-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--ink-2);
+    margin: 0 0 18px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .season-title .display {
+    font-size: 40px;
+    color: var(--ink);
+  }
+  .tapes {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+    gap: 14px;
+  }
+  /* VHS 테이프: 위는 릴, 아래는 손글씨 라벨 */
+  .tape {
+    --accent: var(--bulb);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #111015;
+    border: 1px solid var(--line);
+    text-decoration: none;
+    transition:
+      transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
+      border-color 0.2s;
+  }
+  .tape:hover {
+    transform: translateY(-4px) rotate(-0.4deg);
+    border-color: var(--accent);
+  }
+  .tape.scheduled {
+    border-style: dashed;
+    opacity: 0.7;
+  }
+  .reel {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    background:
+      repeating-linear-gradient(90deg, #ffffff05 0 2px, transparent 2px 5px),
+      #0a0a0d;
+  }
+  .holes {
+    display: flex;
+    gap: 14px;
+  }
+  .holes i {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 3px solid #26232f;
+    background: conic-gradient(
+      #0a0a0d 0 20deg,
+      #3a3646 20deg 40deg,
+      #0a0a0d 40deg 140deg,
+      #3a3646 140deg 160deg,
+      #0a0a0d 160deg 260deg,
+      #3a3646 260deg 280deg,
+      #0a0a0d 280deg
+    );
+  }
+  .tape:hover .holes i {
+    animation: spin 1.2s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .date {
+    font: 11px var(--font-mono);
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .label {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0 10px 10px;
+    padding: 16px 14px 12px;
+    border-radius: 4px;
+    color: var(--cue-ink);
+    background: linear-gradient(var(--accent), var(--accent)) top / 100% 6px no-repeat, var(--cue);
+  }
+  .t {
+    font: 400 26px / 1.05 var(--font-pen);
+  }
+  .types {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .ty {
+    font: 700 10px var(--font-mono);
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: var(--cue-ink);
+    color: var(--cue);
+  }
+  .soon {
+    font: 11px var(--font-mono);
+    color: #6b6248;
+  }
+  .by {
+    display: flex;
+    justify-content: space-between;
+    margin-top: auto;
+    font: 11px var(--font-mono);
+    color: #6b6248;
+  }
+</style>

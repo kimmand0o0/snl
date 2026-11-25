@@ -1,0 +1,311 @@
+---
+/**
+ * 월간 편성 달력. 모든 달을 정적으로 렌더링하고, 브라우저에서 오늘이 속한 달을 먼저 보여줍니다.
+ */
+import { loadAll, ymd, slate, initials } from '../lib/data';
+
+const { episodes, seasons, seasonOf, presenterOf, timeOf, next } = await loadAll();
+
+// 첫 기수 시작 달 ~ 마지막 회차(또는 기수 종료) 달
+const first = seasons[0]?.data.start ?? new Date();
+const lastDates = [
+  ...episodes.map((e) => e.data.date),
+  ...seasons.flatMap((s) => (s.data.end ? [s.data.end] : [])),
+];
+const last = lastDates.length ? new Date(Math.max(...lastDates.map(Number))) : first;
+
+const byDay = new Map<string, typeof episodes>();
+for (const e of episodes) {
+  const k = ymd(e.data.date);
+  byDay.set(k, [...(byDay.get(k) ?? []), e]);
+}
+
+const seasonRanges = seasons.map((s) => ({
+  n: s.data.number,
+  from: ymd(s.data.start),
+  to: s.data.end ? ymd(s.data.end) : '9999-12-31',
+}));
+const seasonAt = (day: string) => seasonRanges.find((r) => r.from <= day && day <= r.to)?.n;
+
+type Cell = { day: string; date: number; inMonth: boolean };
+const months: { key: string; label: string; weeks: Cell[][] }[] = [];
+for (
+  let y = first.getUTCFullYear(), m = first.getUTCMonth();
+  y < last.getUTCFullYear() || (y === last.getUTCFullYear() && m <= last.getUTCMonth());
+  m === 11 ? ((y += 1), (m = 0)) : (m += 1)
+) {
+  const start = new Date(Date.UTC(y, m, 1));
+  start.setUTCDate(1 - start.getUTCDay());
+  const weeks: Cell[][] = [];
+  const cur = new Date(start);
+  do {
+    const week: Cell[] = [];
+    for (let i = 0; i < 7; i++) {
+      week.push({ day: ymd(cur), date: cur.getUTCDate(), inMonth: cur.getUTCMonth() === m });
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    weeks.push(week);
+  } while (cur.getUTCMonth() === m);
+  months.push({ key: `${y}-${String(m + 1).padStart(2, '0')}`, label: `${y}. ${m + 1}`, weeks });
+}
+---
+
+<div class="cal" data-cal>
+  <div class="cal-head">
+    <button type="button" class="nav" data-prev aria-label="이전 달">←</button>
+    <p class="month-label" aria-live="polite" data-label></p>
+    <button type="button" class="nav" data-next aria-label="다음 달">→</button>
+    <button type="button" class="btn today-btn" data-today>오늘</button>
+  </div>
+
+  {
+    months.map((mo, i) => (
+      <section class="month" data-month={mo.key} data-label={mo.label} hidden={i !== months.length - 1}>
+        <div class="dow" aria-hidden="true">
+          {['일', '월', '화', '수', '목', '금', '토'].map((d) => (
+            <span>{d}</span>
+          ))}
+        </div>
+        <div class="grid" role="grid" aria-label={mo.label}>
+          {mo.weeks.map((w) => (
+            <div class="week" role="row">
+              {w.map((c) => {
+                const eps = byDay.get(c.day) ?? [];
+                const sn = seasonAt(c.day);
+                return (
+                  <div
+                    role="gridcell"
+                    class:list={['cell', { out: !c.inMonth, has: eps.length > 0 }]}
+                    data-day={c.day}
+                    data-season={sn}
+                  >
+                    <span class="date">{c.date}</span>
+                    {eps.map((e) => {
+                      const p = presenterOf(e);
+                      return (
+                        <a
+                          href={`/episodes/${e.id}`}
+                          class:list={['ep', e.data.status, { next: e.id === next?.id }]}
+                          style={`--accent:${p.data.accent}`}
+                        >
+                          <span class="who">
+                            <span class="av">{initials(p.data.name)}</span>
+                            <span class="slate-s">{slate(seasonOf(e).data.number, e.data.number)}</span>
+                          </span>
+                          <span class="t">{e.data.title}</span>
+                          <span class="meta">
+                            {p.data.name} · {timeOf(e)}
+                          </span>
+                        </a>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </section>
+    ))
+  }
+</div>
+
+<script>
+  for (const root of document.querySelectorAll<HTMLElement>('[data-cal]')) {
+    const months = [...root.querySelectorAll<HTMLElement>('.month')];
+    const label = root.querySelector<HTMLElement>('[data-label]')!;
+    const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
+    const thisMonth = today.slice(0, 7);
+    let idx = 0;
+
+    const show = (i: number) => {
+      idx = Math.max(0, Math.min(months.length - 1, i));
+      months.forEach((m, j) => (m.hidden = j !== idx));
+      label.textContent = months[idx].dataset.label ?? '';
+      root.querySelector<HTMLButtonElement>('[data-prev]')!.disabled = idx === 0;
+      root.querySelector<HTMLButtonElement>('[data-next]')!.disabled = idx === months.length - 1;
+    };
+    const goToday = () => {
+      const exact = months.findIndex((m) => m.dataset.month === thisMonth);
+      if (exact >= 0) return show(exact);
+      // 범위 밖이면 가장 가까운 달
+      show(thisMonth < (months[0]?.dataset.month ?? '') ? 0 : months.length - 1);
+    };
+
+    root.querySelector(`[data-day="${today}"]`)?.classList.add('today');
+    root.querySelector('[data-prev]')!.addEventListener('click', () => show(idx - 1));
+    root.querySelector('[data-next]')!.addEventListener('click', () => show(idx + 1));
+    root.querySelector('[data-today]')!.addEventListener('click', goToday);
+    goToday();
+  }
+</script>
+
+<style>
+  .cal {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--stage-2);
+    overflow: hidden;
+  }
+  .cal-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .month-label {
+    margin: 0 8px;
+    font-family: var(--font-display);
+    font-size: 28px;
+    line-height: 1;
+    min-width: 6ch;
+  }
+  .nav {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+    font-size: 16px;
+  }
+  .nav:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+  .today-btn {
+    margin-left: auto;
+    padding: 6px 14px;
+  }
+  .dow,
+  .week {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+  .dow span {
+    padding: 8px 10px;
+    font: 700 11px var(--font-mono);
+    color: var(--ink-3);
+    letter-spacing: 0.1em;
+  }
+  .dow span:first-child {
+    color: #c9655c;
+  }
+  .cell {
+    min-height: 116px;
+    padding: 6px;
+    border-top: 1px solid var(--line);
+    border-left: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .cell:first-child {
+    border-left: 0;
+  }
+  .cell[data-season] {
+    background: #ffffff03;
+  }
+  .cell.out {
+    opacity: 0.35;
+  }
+  .date {
+    font: 12px var(--font-mono);
+    color: var(--ink-3);
+    padding: 2px 4px;
+    align-self: flex-start;
+    border-radius: 5px;
+  }
+  .cell.today .date {
+    background: var(--onair);
+    color: #fff;
+    font-weight: 700;
+  }
+  .ep {
+    --accent: var(--bulb);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: color-mix(in oklab, var(--accent) 16%, var(--stage-3));
+    border-left: 3px solid var(--accent);
+    text-decoration: none;
+    min-width: 0;
+    transition: background 0.15s;
+  }
+  .ep:hover {
+    background: color-mix(in oklab, var(--accent) 30%, var(--stage-3));
+  }
+  .ep.next {
+    box-shadow:
+      0 0 0 1px var(--accent),
+      0 0 22px color-mix(in oklab, var(--accent) 40%, transparent);
+  }
+  .ep.done {
+    opacity: 0.75;
+  }
+  .ep.skipped {
+    opacity: 0.5;
+    text-decoration: line-through;
+  }
+  .who {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .av {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--cue-ink);
+    font-size: 9px;
+    font-weight: 800;
+    flex: none;
+  }
+  .slate-s {
+    font: 700 10px var(--font-mono);
+    color: var(--accent);
+  }
+  .t {
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .meta {
+    font-size: 11px;
+    color: var(--ink-2);
+  }
+
+  @media (max-width: 720px) {
+    .cell {
+      min-height: 64px;
+      padding: 3px;
+    }
+    .ep {
+      padding: 4px;
+      border-left-width: 2px;
+    }
+    .t,
+    .meta,
+    .slate-s {
+      display: none;
+    }
+    .av {
+      width: 24px;
+      height: 24px;
+      font-size: 10px;
+    }
+  }
+</style>
