@@ -2,6 +2,10 @@ import { defineMiddleware } from 'astro:middleware';
 import { serverClient } from './lib/supabase';
 
 export const onRequest = defineMiddleware(async (ctx, next) => {
+  // Redirect URL 허용 목록에 없으면 Supabase 가 Site URL(/?code=…)로 돌려보내요. 그 경우도 로그인 처리로 넘깁니다.
+  const code = ctx.url.searchParams.get('code');
+  if (ctx.url.pathname === '/' && code) return ctx.redirect(`/auth/callback?code=${encodeURIComponent(code)}`);
+
   const supabase = serverClient(ctx.request, ctx.cookies);
   ctx.locals.supabase = supabase;
   ctx.locals.user = null;
